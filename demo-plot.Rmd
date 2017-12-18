@@ -31,13 +31,13 @@ df$pct_lks <- runif(dim(df)[1], 0, 100)
 
 ## Create test plot
 
-```{r}
+```{r pct-lks-by-dx-menu-pos-aoi}
 p <- df %>%
   ggplot(aes(aoi, pct_lks)) +
   facet_grid(dx ~ menu) +
   geom_violin() +
-  geom_point()
-
+  geom_point() +
+  ggtitle("Percent looks by group, menu position, and area of interest")
 p
 ```
 

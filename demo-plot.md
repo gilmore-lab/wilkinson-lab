@@ -1,7 +1,7 @@
 demo-plot
 ================
 Rick Gilmore
-2017-12-18 15:50:49
+2017-12-18 15:53:57
 
 Create random test data file
 ----------------------------
@@ -31,9 +31,9 @@ p <- df %>%
   ggplot(aes(aoi, pct_lks)) +
   facet_grid(dx ~ menu) +
   geom_violin() +
-  geom_point()
-
+  geom_point() +
+  ggtitle("Percent looks by group, menu position, and area of interest")
 p
 ```
 
-![](demo-plot_files/figure-markdown_github-ascii_identifiers/unnamed-chunk-2-1.png)
+![](demo-plot_files/figure-markdown_github-ascii_identifiers/pct-lks-by-dx-menu-pos-aoi-1.png)
