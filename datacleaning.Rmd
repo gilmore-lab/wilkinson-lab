@@ -1,0 +1,17 @@
+---
+title: "datacleaning"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+list.files(path="~/")
+
+```{r import-data}
+df<-read.table(file = 'data/all_emo_subjects.tsv', sep = '\t', header = TRUE)
+```
+
+start_with
