@@ -6,6 +6,7 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
+library(dplyr)
 ```
 
 list.files(path="~/")
@@ -15,3 +16,18 @@ df<-read.table(file = 'data/all_emo_subjects.tsv', sep = '\t', header = TRUE)
 ```
 
 start_with
+
+```{r arrange-data}
+# extract the fixation 
+newdata<-df[ which(df$GazeEventType=='Fixation' ), ]
+# extract condition from media 
+newdata$condt <- as.factor(substr(newdata$MediaName, 1:5))
+
+# extract all the aoi column into one column
+newdata$aoi<-NA
+for (1:nrow(newdata)){
+  for (1:ncol(newdata)){
+    
+  }
+}
+   
