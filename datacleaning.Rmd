@@ -17,17 +17,30 @@ df<-read.table(file = 'data/all_emo_subjects.tsv', sep = '\t', header = TRUE)
 
 start_with
 
-```{r arrange-data}
+```{r preclean-data}
 # extract the fixation 
-newdata<-df[ which(df$GazeEventType=='Fixation' ), ]
+newdata <-  filter(df,GazeEventType=="Fixation")
+# [ which(df$GazeEventType=='Fixation' ), ]
 # extract condition from media 
-newdata$condt <- as.factor(substr(newdata$MediaName, 1:5))
+newdata$condt <- as.factor(substr(newdata$MediaName, 1,5))
+# delete the aoi condition with "all"
+newdata %>% 
+# select(-contains('ALL')) %>%  # If ABC is not 1, X is 1, it will be indicated in ALL condition 
+  select (-FixationIndex)->newdata
 
+```
+
+```{r rearrange-data}
 # extract all the aoi column into one column
-newdata$aoi<-NA
-for (1:nrow(newdata)){
-  for (1:ncol(newdata)){
-    
-  }
+df2<-newdata[,1:6]
+df2$MediaName<-newdata$condt
+df2$aoi<-""
+for (i in 1:nrow(newdata)) {
+  #for (j in 7:(ncol(newdata2)-1)) {
+    # if (newdata[i,j]==1 && !is.na(newdata[i,j])) {df2$aoi[i]<-colnames(newdata)[j]}
+    df2$aoi[i]<-colnames(newdata[min(which(newdata[i,]==1))])
+  #}
 }
+# (1:nrow(mydata_2))[mydata_2[,4] == 1578]
+```
    
