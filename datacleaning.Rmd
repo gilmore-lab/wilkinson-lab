@@ -1,0 +1,152 @@
+---
+title: "datacleaning"
+author: "Yiming Qian & Rick Gilmore"
+date: "`r Sys.time()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+```
+
+## Purpose
+
+This document imports, cleans, and produces a table summarizing the transitional probabilities in the EMO layout condition for the R01-2 experiment.
+
+The input data file includes all of the participants from this EMO condition.
+
+We do not (as of 2018-10-26) have separate data about which participants have which characteristics (gender, disability status, age, ...).
+
+## Description of input data file
+
+The raw file
+
+## Import data
+
+list.files(path="~/")
+
+```{r import-data}
+df<-read.table(file = 'data/all_emo_subjects.tsv', sep = '\t', header = TRUE)
+```
+
+Select fixation events and media (image) names.
+
+```{r preclean-data}
+# extract the fixation 
+newdata <-  filter(df,GazeEventType=="Fixation")
+# [ which(df$GazeEventType=='Fixation' ), ]
+# extract condition from media 
+newdata$condt <- as.factor(substr(newdata$MediaName, 1,5))
+# delete the aoi condition with "all"
+newdata %>% 
+# select(-contains('ALL')) %>%  # If ABC is not 1, X is 1, it will be indicated in ALL condition 
+  select (-FixationIndex) %>%
+  select(-MouseEventIndex)->newdata2
+
+```
+
+Create a new data frame with an `aoi` variable that is either NA (if there is no valid fixation among the targets) or the media name, e.g., `AOI.3B.EMO.HOT.Hit`.  (In the original, raw data file from the Tobii, there are individual columns for each AOI and condition. If the system detects a fixation within that AOI, it puts a 1 in the row for that fixation and the column for that AOI/condition.)
+
+Here, the `3B` refers to trial 3 and `B` refers to targets that are semantically related to the actual target `A`. `C` refers to a distractor, and `X` refers to the background. `EMO` refers to the specific layout of the images. `HOT` refers to the image type. `Hit` simply means that the fixation fell within the AOI associated with this image.
+
+```{r rearrange-data}
+# extract all the aoi column into one column
+df2<-newdata2[,1:4]
+df2$MediaName<-newdata$condt
+df2$aoi<-""
+for (i in 1:nrow(newdata2)) {
+  #for (j in 7:(ncol(newdata2)-1)) {
+    # if (newdata[i,j]==1 && !is.na(newdata[i,j])) {df2$aoi[i]<-colnames(newdata)[j]}
+  if (identical(which(newdata2[i,]==1),integer(0))){
+    df2$aoi[i]<-NA}
+    else {
+    df2$aoi[i]<-colnames(newdata2[min(which(newdata2[i,]==1))])}
+  #}
+}
+# (1:nrow(mydata_2))[mydata_2[,4] == 1578]
+```
+
+Process the `aoi` variable to extract the {A, B, C, or X}. Also, I computed a duration variable.
+
+```{r separate-data}  
+df2$FixationIndex<-newdata$FixationIndex
+df2$MouseEventIndex<-newdata$MouseEventIndex
+df2 %>% 
+  filter(!is.na(aoi))->df3
+df3$category<- as.factor(sub("[^[:alpha:]]+","",substr(df3$aoi, 6,7)))
+df3$category[df3$category=="is"] <-"C"
+#df3$vocab<- as.factor(substr(df3$aoi, 12,(nchar(df3$aoi)-4)))
+df3 %>%
+  group_by(ParticipantName,MediaName,FixationIndex,category) %>%
+  summarize(duration = max(RecordingTimestamp)-min(RecordingTimestamp))   ->df4
+```
+
+Create a 4x4 transition matrix for each subject. The function `count_transition` computes this.
+
+```{r create-targeted-table}
+df4$category<-as.character(df4$category)
+count_transition<-function(data){
+  AA<-0
+  AB<-0
+  AC<-0
+  AX<-0
+  BA<-0
+  BB<-0
+  BC<-0
+  BX<-0
+  CA<-0
+  CB<-0
+  CC<-0
+  CX<-0
+  XA<-0
+  XB<-0
+  XC<-0
+  XX<-0
+  for (i in 1:nrow(data)) {
+    if ((data$category[i]=='A') && (data$category[i+1]=='A' )) {AA<-AA+1}
+    else if ((data$category[i]=='A') && (data$category[i+1]=='B' )) {AB<-AB+1}
+    else if ((data$category[i]=='A') && (data$category[i+1]=='C' )) {AC<-AC+1}
+    else if ((data$category[i]=='A') && (data$category[i+1]=='X' )) {AX<-AX+1}
+    else if ((data$category[i]=='B') && (data$category[i+1]=='A' )) {BA<-BA+1}
+    else if ((data$category[i]=='B') && (data$category[i+1]=='B' )) {BB<-BB+1}
+    else if ((data$category[i]=='B') && (data$category[i+1]=='C' )) {BC<-BC+1}
+    else if ((data$category[i]=='B') && (data$category[i+1]=='X' )) {BX<-BX+1}
+    else if ((data$category[i]=='C') && (data$category[i+1]=='A' )) {CA<-CA+1}
+    else if ((data$category[i]=='C') && (data$category[i+1]=='B' )) {CB<-CB+1}
+    else if ((data$category[i]=='C') && (data$category[i+1]=='C' )) {CC<-CC+1}
+    else if ((data$category[i]=='C') && (data$category[i+1]=='X' )) {CX<-CX+1}
+    else if ((data$category[i]=='X') && (data$category[i+1]=='A' )) {XA<-XA+1}
+    else if ((data$category[i]=='X') && (data$category[i+1]=='B' )) {XB<-XB+1}
+    else if ((data$category[i]=='X') && (data$category[i+1]=='C' )) {XC<-XC+1}
+    else if ((data$category[i]=='X') && (data$category[i+1]=='X' )) {XX<-XX+1}  
+    return(c(AA,AB,AC,AX,BA,BB,BC,BX,CA,CB,CC,CX,XA,XB,XC,XX))
+  }
+}
+```
+
+Now, I apply this function to each participant's data and then print out the table.
+
+```{r}
+# step1: count in each media for each subject
+df4 %>% 
+  group_by(ParticipantName,MediaName) %>%
+  mutate(AA=count_transition(category)[1],
+         AB=count_transition(category)[2],
+         AC=count_transition(category)[3],
+         AD=count_transition(category)[4],
+         BA=count_transition(category)[5],
+         BB=count_transition(category)[6],
+         BC=count_transition(category)[7],
+         BX=count_transition(category)[8],
+         CA=count_transition(category)[9],
+         CB=count_transition(category)[10],
+         CC=count_transition(category)[11],
+         CX=count_transition(category)[12],
+         XA=count_transition(category)[13],
+         XB=count_transition(category)[14],
+         XC=count_transition(category)[15],
+         XX=count_transition(category)[16]
+         )
+```
