@@ -4,7 +4,7 @@
 
 
 # Function 1: extract condt from media (function)}
-extractcondt.fun <- function(data){  
+extractcondt.fun <- function(data){  15
 
 data$condt <- as.factor(substr(data$MediaName, 7,10))
 levels(data$condt) <- c(levels(data$condt), "soc")
