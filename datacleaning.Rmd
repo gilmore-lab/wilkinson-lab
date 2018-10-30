@@ -12,17 +12,18 @@ library(dplyr)
 list.files(path="~/")
 
 ```{r import-data}
-df<-read.table(file = 'data/all_emo_subjects.tsv', sep = '\t', header = TRUE)
+df<-read.table(file = 'data/all_soc_subjects.tsv', sep = '\t', fill=T, header = TRUE)
 ```
 
 start_with
+head(df)
 
 ```{r preclean-data}
 # extract the fixation 
-newdata <-  filter(df,GazeEventType=="Fixation")
+newdata <- filter(df,GazeEventType=="Fixation")
 # [ which(df$GazeEventType=='Fixation' ), ]
 # extract condition from media 
-newdata$condt <- as.factor(substr(newdata$MediaName, 1,5))
+newdata$condt <- as.factor(substr(newdata$MediaName, 1,7))
 # delete the aoi condition with "all"
 newdata %>% 
 # select(-contains('ALL')) %>%  # If ABC is not 1, X is 1, it will be indicated in ALL condition 
@@ -53,14 +54,27 @@ df2$FixationIndex<-newdata$FixationIndex
 df2$MouseEventIndex<-newdata$MouseEventIndex
 df2 %>% 
   filter(!is.na(aoi))->df3
-df3$category<- as.factor(sub("[^[:alpha:]]+","",substr(df3$aoi, 6,7)))
-df3$category[df3$category=="is"] <-"C"
+df3$category<- gsub("[^a-zA-Z]", "", substr(df3$aoi,5,7))
+df3$category[which(df3$category=='AS')] <-'A'
+df3$category[which(df3$category=='BS')] <-'B'
+df3$category[which(df3$category=='CS')] <-'C'
+df3$category[which(df3$category=='XS')] <-'X'
+# df3$category<- as.factor(sub("[^[:alpha:]]+","",substr(df3$aoi, 5,6)))
+# df3$category[df3$category=="Dis"] <-"C"   # special condition: the AOI.distractor.EMO.Hit
+# df3$category[df3$category=="ar"] <- "A"    #AOI.Target.Hit
+# df3$category[df3$category=="ro"]
+# df3$category[df3$category=="el"]
 #df3$vocab<- as.factor(substr(df3$aoi, 12,(nchar(df3$aoi)-4)))
+df3$category<-as.factor(df3$category)
 df3 %>%
   group_by(ParticipantName,MediaName,FixationIndex,category) %>%
   summarize(duration = max(RecordingTimestamp)-min(RecordingTimestamp))   ->df4
 df4$category<-as.character(df4$category)
 ```
+
+LP has high percentage of unclassified and saccade  
+How about percentage of correct responses?
+reaction time for mouse responses?
 
 ```{r create-targeted-table}
 count_transition<-function(x){
@@ -140,5 +154,13 @@ df5 %>%
 ```
 
 ```{r export-data}
-write.table(df6, "data/transitional_probability.txt", sep="\t")
+write.table(df6, "data/all_clock_subjects_transitional_probability.txt", sep="\t", row.names = FALSE)
 ```
+
+write.table(df4, "data/soc_r.txt", sep="\t", row.names = FALSE)
+df7<-read.table(file = 'data/soc_r.txt', sep = '\t', fill=T, header = TRUE)
+
+for (i in nrow(df7)) {
+if ((df4$category[i]!=df7$category[i])==False){
+print(df7$ParticipantName, df7$MediaName, df7$FixationIndex)}
+} 
