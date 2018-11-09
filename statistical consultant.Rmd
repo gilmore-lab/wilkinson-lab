@@ -1,0 +1,17 @@
+---
+title: "Statistical consultant"
+author: "Yiming"
+date: "11/9/2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##
+y is the table (16* n of subject)
+x is 4 conditions and 2 groups
+
+1. Use PC to reduce the dimension into two, than use the regression model
+2. MANOVA

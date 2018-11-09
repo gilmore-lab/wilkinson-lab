@@ -12,7 +12,7 @@ library(dplyr)
 list.files(path="~/")
 
 ```{r import-data}
-df<-read.table(file = 'data/all_soc_subjects.tsv', sep = '\t', fill=T, header = TRUE)
+df<-read.table(file = 'data/all_soc_subjects_R.tsv', sep = '\t', fill=T, header = TRUE)
 ```
 
 start_with
@@ -154,13 +154,13 @@ df5 %>%
 ```
 
 ```{r export-data}
-write.table(df6, "data/all_clock_subjects_transitional_probability.txt", sep="\t", row.names = FALSE)
+write.table(df6, "data/all_soc_subjects_transitional_probability_r.txt", sep="\t", row.names = FALSE)
 ```
 
 write.table(df4, "data/soc_r.txt", sep="\t", row.names = FALSE)
-df7<-read.table(file = 'data/soc_r.txt', sep = '\t', fill=T, header = TRUE)
+df4<-read.table(file = 'data/soc_r.txt', sep = '\t', fill=T, header = TRUE)
 
 for (i in nrow(df7)) {
-if ((df4$category[i]!=df7$category[i])==False){
-print(df7$ParticipantName, df7$MediaName, df7$FixationIndex)}
+  if ((df4$category[i]!=df7$category[i])==TRUE) {
+    print(df7[i,]}
 } 
