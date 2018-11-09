@@ -21,7 +21,11 @@ df<-read.table(file = 'data/all_subjects_transitional_probability.txt', header =
 fit <- lm(total ~ Condition+Group, data=df)  # build linear regression model on full data
 summary(fit)
 ```
-
+```{r plot-total}
+boxplot(AA~Group*Condition, data=df, 
+  col=(c("gold","darkgreen")),
+  main="total translational counts", xlab="Condition and group")
+```
 # Other useful functions 
 coefficients(fit) # model coefficients
 confint(fit, level=0.95) # CIs for model parameters 
