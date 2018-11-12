@@ -20,11 +20,37 @@ df<-read.table(file = 'data/all_subjects_transitional_probability.txt', header =
 ```{r linear-regression-total}
 fit <- lm(total ~ Condition+Group, data=df)  # build linear regression model on full data
 summary(fit)
+library(nlme)
+library(contrast)
+contrast(fit,
+         a = list(group = "U"),
+         b = list(group = "T"))
 ```
-```{r plot-total}
-boxplot(AA~Group*Condition, data=df, 
+```{r linear-regression-total-interaction}
+fit.inte <- lm(total ~ Condition*Group, data=df)  # build linear regression model on full data
+summary(fit.inte)
+```
+```{r boxplot-total}
+boxplot(total~Group*Condition, data=df, 
   col=(c("gold","darkgreen")),
   main="total translational counts", xlab="Condition and group")
+```
+```{r plot-total}
+library(dplyr)
+df2<-df %>%
+  group_by(Condition, Group) %>%
+  summarize(total.mean=mean(total),
+            total.se=sd(total)/length(total))
+
+ggplot(df2, aes(x=Condition, y=total.mean, group=Group, color=Group))+
+         geom_line()+
+        labs(x="condition", y="Total counts") +
+         ggtitle('total translational counts') +
+       scale_colour_hue(name="group",    #Legend label, use darker colors
+                      breaks=c("T", "U"),
+                    labels=c("Typically developing adults", "Down symdrone adults"))+
+        geom_pointrange(aes(ymin=total.mean-total.se, ymax=total.mean+total.se))
+  
 ```
 # Other useful functions 
 coefficients(fit) # model coefficients
