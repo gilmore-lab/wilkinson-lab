@@ -23,18 +23,17 @@ head(df)
 newdata <- filter(df,GazeEventType=="Fixation")
 # [ which(df$GazeEventType=='Fixation' ), ]
 # extract condition from media 
-newdata$condt <- as.factor(substr(newdata$MediaName, 1,7))
-# delete the aoi condition with "all"
-newdata %>% 
-# select(-contains('ALL')) %>%  # If ABC is not 1, X is 1, it will be indicated in ALL condition 
-  select (-FixationIndex) %>%
-  select(-MouseEventIndex)->newdata2
-
+newdata$condt <- as.factor(substr(newdata$MediaName, 1,7))# delete the aoi condition with "all"
+# newdata %>% 
+# # select(-contains('ALL')) %>%  # Not right, If ABC is not 1, X is 1, it will be indicated in ALL condition 
+#   select(-FixationIndex) %>%
+#   select(-MouseEventIndex)->newdata2
+newdata2 <- newdata[c(-4,-5)]
 ```
 
 ```{r rearrange-data}
 # extract all the aoi column into one column
-df2<-newdata2[,1:4]
+df2<-newdata2[,1:4]  # to substitute this line
 df2$MediaName<-newdata$condt
 df2$aoi<-""
 for (i in 1:nrow(newdata2)) {

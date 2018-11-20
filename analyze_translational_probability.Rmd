@@ -9,38 +9,44 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(MASS)
+library(graphics)
 ```
 
 ## read the file
 ```{r import-data}
-df<-read.table(file = 'data/all_subjects_transitional_probability.txt', header = TRUE)
+data<-read.table(file = 'data/all_subjects_transitional_probability.txt', header = TRUE)
 ```
 
 ## linear regression of total counts
 ```{r linear-regression-total}
-fit <- lm(total ~ Condition+Group, data=df)  # build linear regression model on full data
+fit <- lm(total ~ Condition+Group, data=data)  # build linear regression model on full data
 summary(fit)
 library(nlme)
 library(contrast)
 contrast(fit,
-         a = list(group = "U"),
-         b = list(group = "T"))
+         a = list(Group = "U",Condition=levels(df$Condition)),
+         b = list(Group = "T",Condition=levels(df$Condition)))
 ```
 ```{r linear-regression-total-interaction}
-fit.inte <- lm(total ~ Condition*Group, data=df)  # build linear regression model on full data
+fit.inte <- lm(total ~ Condition*Group, data=data)  # build linear regression model with interaction
 summary(fit.inte)
 ```
 ```{r boxplot-total}
-boxplot(total~Group*Condition, data=df, 
+boxplot(total~Group*Condition, data=data, 
   col=(c("gold","darkgreen")),
   main="total translational counts", xlab="Condition and group")
 ```
+
+
 ```{r plot-total}
 library(dplyr)
-df2<-df %>%
+df2<-data %>%
   group_by(Condition, Group) %>%
   summarize(total.mean=mean(total),
-            total.se=sd(total)/length(total))
+            n=n(),
+            total.se=sd(total)/sqrt(n))
 
 ggplot(df2, aes(x=Condition, y=total.mean, group=Group, color=Group))+
          geom_line()+
@@ -72,7 +78,75 @@ plot(fit)
 
 ```{r manova-test}
 # MANOVA test
-res.man <- manova(cbind(AA,AB,AC,AX,BA,BB,BC,BX,CA,CB,CC,CX,XA,XB,XC,XX) ~ Condition+Group, data = df)
+res.man <- manova(cbind(AA,AB,AC,AX,BA,BB,BC,BX,CA,CB,CC,CX,XA,XB,XC,XX) ~ Condition+Group, data = data)
 summary(res.man)
 summary.aov(res.man)
+```
+
+Also, I noticed that in LP condition, there is relatively high percentage of “unclassified” and “saccade” (34.48%).   33.46% in emo, 35.12% in clock, 33.94% in soc.
+
+## linear regression of total counts from A
+```{r linear-regression-total}
+data$A<-rowSums(data[,4:7] )
+fit.a <- lm(A ~ Condition+Group, data=data)  # build linear regression model on full data
+summary(fit.a)
+```
+
+```{r chi-Square}
+data %>%
+  group_by(Group, Condition) %>%
+  summarise(AA=mean(AA),
+            AB=mean(AB),
+            AC=mean(AC),
+            AX=mean(AX)) ->df2
+
+#create color palette:
+library(RColorBrewer)
+coul = brewer.pal(4, "Pastel2") 
+ 
+#Transform this data in %
+data_percentage=apply(df2[1:8,3:6], 1, function(x){x*100/sum(x,na.rm=T)})
+colnames(data_percentage) <- c("clock_T","emo_T","LP_T","soc_T","clock_U","emo_U","LP_U","soc_U")
+rownames(data_percentage) <- c("AA","AB","AC","AX")
+
+# Make a stacked barplot--> it will be in %!
+bar<-barplot(data_percentage, col=coul , border="white", main="Percentage of AOI from target to the other categories") +
+     legend(x="bottom", cex=0.7, c("Target AOI","Related AOI","distractors","white background"))
+```
+
+```{r chi-square}
+# null hypothesis: given the total eye movement from target has no significant difference, the two groups of participants have the same likelihood to have eye movement to 4 categories in each condition. OR, we can say there is no association between groups and conditions.
+# expected dataframe is group by row, condition by col.  
+df3<-df2[, 3:6]
+row.names(df3) <- paste(df2$Condition, df2$Group, sep = "_")
+chisq<-chisq.test(df3, correct=FALSE) 
+# Observed counts
+chisq$observed
+round(chisq$expected,2)
+# Pearson residuals can be easily extracted from the output of the function chisq.test():
+round(chisq$residuals, 3)
+# Contibution in percentage (%)
+contrib <- 100*chisq$residuals^2/chisq$statistic
+round(contrib, 3)
+# printing the p-value
+chisq$p.value
+# printing the mean
+chisq$estimate
+```
+
+```{r chi-square}
+# null hypothesis: given the total eye movement from target has no significant difference, the two groups of participants have the same likelihood to have eye movement to 4 categories in each condition. OR, we can say there is no association between groups and conditions.
+# expected dataframe is group by row, condition by col.  
+chisq.clock<-chisq.test(df3[c(1,5),], correct=FALSE) 
+chisq.clock
+chisq.emo<-chisq.test(df3[c(2,6),], correct=FALSE) 
+chisq.emo
+chisq.LP<-chisq.test(df3[c(3,7),], correct=FALSE) 
+chisq.LP
+chisq.soc<-chisq.test(df3[c(4,8),], correct=FALSE) 
+chisq.soc
+chisq.T<-chisq.test(df3[1:4,], correct=FALSE) 
+chisq.T
+chisq.U<-chisq.test(df3[5:8,], correct=FALSE) 
+chisq.U
 ```
