@@ -1,0 +1,122 @@
+---
+title: "Plot_data"
+author: "Yiming"
+date: "r time_sys()"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2)
+library(MASS)
+library(graphics)
+library(RColorBrewer)
+library(tidyr)
+library(reshape2)
+```
+
+## read the file
+```{r import-data}
+data<-read.table(file = 'data/all_subjects_transitional_probability.txt', header = TRUE)
+# rename
+data$Condition<-factor( data$Condition, 
+      levels = c("soc", "clock","LP","emo"), 
+      labels = c("SOC", "CLOCK", "LP","EMO")) 
+data$Group<-factor( data$Group, 
+      levels = c("T", "U"), 
+      labels = c("Control", "Down's")) 
+```
+
+## total time between 2 groups
+
+### total time after looking at A between 2 groups
+
+## total search between 2 groups
+```{r boxplot-total}
+p <- ggplot(data, aes(x=Condition, y=total/8, fill = Group)) + 
+    scale_x_discrete(name = "Condition") +
+    scale_y_continuous(name = "Total translational counts") +
+    geom_boxplot()+
+    theme_bw() +
+    theme(plot.title = element_text(size = 14, family = "Tahoma", face = "bold"),
+              text = element_text(size = 12, family = "Tahoma"),
+              axis.title = element_text(face="bold"),
+              axis.text.x=element_text(size = 11)) 
+     # + scale_fill_discrete(name="Group",
+     #                    breaks=c("T", "U"),
+      #                   labels=c("Control", "Down's"))
+p
+
+```
+```{r lineplot-total}
+df<- data %>%
+  group_by(Condition, Group) %>%
+  summarize(total.mean=mean(total/8),
+            n=n(),
+            total.se=sd(total/8)/sqrt(n))
+
+p1<-ggplot(df, aes(x=Condition, y=total.mean, group=Group, color=Group))+
+         geom_line()+
+        labs(x="condition", y="Total counts")  +
+        geom_pointrange(aes(ymin=total.mean-total.se, ymax=total.mean+total.se))
+         # ggtitle('total translational counts') +
+    #  +  scale_colour_hue(name="group",    #Legend label, use darker colors
+     #                 breaks=c("T", "U"),
+      #              labels=c("Control", "Down's"))+
+       
+p1
+```
+### total extra search after first-time looking at A between 2 groups
+
+## an example of search path in one condition (?)
+### Control
+### Down
+
+## 4*4 graph of average AOI counts in all subjects between 2 groups
+
+## translation lines to each state
+
+## Percentage of AOI from target to the other categories
+### To ABCX
+```{r percentage-AOI-all-after-A}
+data %>%
+  group_by(Group, Condition) %>%
+  summarise(AA=mean(AA),
+            AB=mean(AB),
+            AC=mean(AC),
+            AX=mean(AX))->df2
+df2<-melt(df2, id.vars=c("Group","Condition"), variable.name="A")
+
+p3<-ggplot(df2, aes(fill=A  , y=value, x=Condition)) + 
+    geom_bar( stat="identity", position="fill") +    
+    facet_wrap(~Group) +
+    xlab("Condition") + ylab("Percentage of AOI after looking at the targeted AOI") + # Set axis labels
+   # ggtitle("Average bill for 2 people") +     # Set title
+    theme_bw() 
+   # + scale_colour_hue(name="AOI after looking at target AOI",    #Legend label, use darker colors
+   #                   breaks=c("AA", "AB","AC","AX"),
+   #                labels=c("Target AOI","Related AOI","distractors","white background"))
+p3
+```
+
+### to ABC
+```{r percentage-AOI-ABC-after-A}
+data %>%
+  group_by(Group, Condition) %>%
+  summarise(AA=mean(AA),
+            AB=mean(AB),
+            AC=mean(AC))->df2
+df2<-melt(df2, id.vars=c("Group","Condition"), variable.name="ABC")
+
+p3<-ggplot(df2, aes(fill=ABC  , y=value, x=Condition)) + 
+    geom_bar( stat="identity", position="fill") +    
+    facet_wrap(~Group) +
+    xlab("Condition") + ylab("Percentage of AOI after looking at the targeted AOI") + # Set axis labels
+   # ggtitle("Average bill for 2 people") +     # Set title
+    theme_bw()
+  #  scale_colour_hue(name="AOI after looking at target AOI",    #Legend label, use darker colors
+  #                    breaks=c("AA", "AB","AC","AX"),
+   #                 labels=c("Target AOI","Related AOI","distractors","white background"))
+p3
+```
