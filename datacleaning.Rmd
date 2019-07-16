@@ -112,10 +112,10 @@ df2 %>%
   filter(!is.na(aoi))->df3
 <<<<<<< HEAD
 df3$category<- gsub("[^a-zA-Z]", "", substr(df3$aoi,5,7))
-df3$category[which(df3$category=='AS')] <-'A'
-df3$category[which(df3$category=='BS')] <-'B'
-df3$category[which(df3$category=='CS')] <-'C'
-df3$category[which(df3$category=='XS')] <-'X'
+df3$category[which(df3$category=='A')] <-'A'
+df3$category[which(df3$category=='B')] <-'B'
+df3$category[which(df3$category=='C')] <-'C'
+df3$category[which(df3$category=='X')] <-'X'
 # df3$category<- as.factor(sub("[^[:alpha:]]+","",substr(df3$aoi, 5,6)))
 # df3$category[df3$category=="Dis"] <-"C"   # special condition: the AOI.distractor.EMO.Hit
 # df3$category[df3$category=="ar"] <- "A"    #AOI.Target.Hit

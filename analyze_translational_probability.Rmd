@@ -39,6 +39,21 @@ boxplot(total~Group*Condition, data=data,
   main="total translational counts", xlab="Condition and group")
 ```
 
+```{r anova-condition}
+# Compute the analysis of variance
+aov.cond <- aov(total ~ Condition, data = data)
+# Summary of the analysis
+summary(aov.cond)
+TukeyHSD(aov.cond)
+```
+
+```{r anova-condition}
+# Compute the analysis of variance
+aov.cond <- aov(total ~ Condition, data = data)
+# Summary of the analysis
+summary(aov.cond)
+TukeyHSD(aov.cond)
+```
 
 ```{r plot-total}
 library(dplyr)
@@ -147,6 +162,7 @@ df3<-df2[, 3:6]  # if I muliply it with 100, it is significant. But shall I?
 # df4<-as.table(df3)
 chisq<-chisq.test(df3, simulate.p.value = TRUE) # df disappear?
 chisq<-chisq.test(df3) 
+chisq<-chisq.test(df3[-4,1:4]) 
 # Observed counts
 chisq$observed
 round(chisq$expected,2)
