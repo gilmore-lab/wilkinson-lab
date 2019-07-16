@@ -1,7 +1,7 @@
 ---
 title: "Plot_data"
 author: "Yiming"
-date: "r time_sys()"
+date: "`r Sys.time()`"
 output: html_document
 ---
 
@@ -18,6 +18,7 @@ library(gplots)
 ```
 
 ## read the file
+
 ```{r import-data}
 data<-read.table(file = 'data/all_subjects_transitional_probability.txt', header = TRUE)
 # rename
@@ -41,7 +42,11 @@ t_soc<-read.table(file = 'data/SOC_SUMMARY_R.txt', sep = '\t', fill=T, header = 
 data$Condition <- factor(data$Condition,levels = c("SOC", "LP", "EMO", "CLOCK"))
 p <- ggplot(data, aes(x=Condition, y=total/8, fill = Group)) + 
     scale_x_discrete(name = "Condition") +
+<<<<<<< HEAD
     scale_y_continuous(name = "Average transitional counts per trial") +
+=======
+    scale_y_continuous(name = "Total transition (fixation to fixation) counts") +
+>>>>>>> ac0f90fe3d2a87b7a41acead46ebcde3584778bf
     geom_boxplot()+
     theme_bw() +
     theme(plot.title = element_text(size = 14, family = "Tahoma", face = "bold"),
@@ -257,10 +262,11 @@ data %>%
   summarise(AA=mean(AA),
             AB=mean(AB),
             AC=mean(AC),
-            AX=mean(AX))->df2
+            AX=mean(AX)) ->df2
+
 df2<-melt(df2, id.vars=c("Group","Condition"), variable.name="A")
 
-p3<-ggplot(df2, aes(fill=A  , y=value, x=Condition)) + 
+p3<-ggplot(df2, aes(fill=A, y=value, x=Condition)) + 
     geom_bar( stat="identity", position="fill") +    
     facet_wrap(~Group) +
     xlab("Condition") + ylab("Percentage of AOI after looking at the targeted AOI") + # Set axis labels
