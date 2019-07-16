@@ -1,7 +1,7 @@
 ---
-title: "analysis"
+title: "analysis-R01A"
 author: "Yiming"
-date: "11/9/2018"
+date: "7/16/2019"
 output:
   pdf_document: default
   html_document: default
@@ -12,11 +12,12 @@ knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
 library(MASS)
 library(graphics)
+library(openxlsx)
 ```
 
 ## read the file
 ```{r import-data}
-data<-read.table(file = 'data/all_subjects_transitional_probability.txt', header = TRUE)
+data<-read.xlsx("data-R01A/R01_A_Data_Export_TD_newAOInames.xlsx",  1)
 ```
 
 ## linear regression of total counts
