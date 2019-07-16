@@ -17,7 +17,9 @@ library(openxlsx)
 
 ## read the file
 ```{r import-data}
-data<-read.xlsx("data-R01A/R01_A_Data_Export_TD_newAOInames.xlsx",  1)
+setwd("data-R01A")
+getwd()
+df<-read.xlsx("R01_C_Data_Export_DS_newAOInames.xlsx", 1, 1)
 ```
 
 ## linear regression of total counts
