@@ -20,7 +20,7 @@ library(openxlsx)
 list.files(path="~/")
 
 ```{r import-data}
-df<-read.xlsx("data-R01A/R01_C_Data_Export_DS_newAOInames.xlsx")
+df<-read.xlsx("data-R01A/R01_A_Data_Export_TD_newAOInames.xlsx")
 ```
 
 start_with
@@ -106,8 +106,9 @@ df3 %>%
 Create a 4x4 transition matrix for each subject. The function `count_transition` computes this.
 
 ```{r create-targeted-table}
+df4<-read.table("data-R01A/R01_A_TD.txt",header = TRUE)
 df4$category<-as.character(df4$category)
-count_transition<-function(data){
+count_transition<-function(x){
   AA<-0
   AB<-0
   AC<-0
@@ -143,34 +144,8 @@ count_transition<-function(data){
     else if (identical(x[i],'X') && identical(x[i+1],'X')) {XX<-XX+1}  } 
     return(c(AA,AB,AC,AX,BA,BB,BC,BX,CA,CB,CC,CX,XA,XB,XC,XX))
 }
-# step1: count in each media for each subject
-df4 %>% 
-  group_by(ParticipantName,MediaName) %>%
-  summarise(AA=count_transition(category)[1],
-         AB=count_transition(category)[2],
-         AC=count_transition(category)[3],
-         AX=count_transition(category)[4],
 
-  for (i in 1:nrow(data)) {
-    if ((data$category[i]=='A') && (data$category[i+1]=='A' )) {AA<-AA+1}
-    else if ((data$category[i]=='A') && (data$category[i+1]=='B' )) {AB<-AB+1}
-    else if ((data$category[i]=='A') && (data$category[i+1]=='C' )) {AC<-AC+1}
-    else if ((data$category[i]=='A') && (data$category[i+1]=='X' )) {AX<-AX+1}
-    else if ((data$category[i]=='B') && (data$category[i+1]=='A' )) {BA<-BA+1}
-    else if ((data$category[i]=='B') && (data$category[i+1]=='B' )) {BB<-BB+1}
-    else if ((data$category[i]=='B') && (data$category[i+1]=='C' )) {BC<-BC+1}
-    else if ((data$category[i]=='B') && (data$category[i+1]=='X' )) {BX<-BX+1}
-    else if ((data$category[i]=='C') && (data$category[i+1]=='A' )) {CA<-CA+1}
-    else if ((data$category[i]=='C') && (data$category[i+1]=='B' )) {CB<-CB+1}
-    else if ((data$category[i]=='C') && (data$category[i+1]=='C' )) {CC<-CC+1}
-    else if ((data$category[i]=='C') && (data$category[i+1]=='X' )) {CX<-CX+1}
-    else if ((data$category[i]=='X') && (data$category[i+1]=='A' )) {XA<-XA+1}
-    else if ((data$category[i]=='X') && (data$category[i+1]=='B' )) {XB<-XB+1}
-    else if ((data$category[i]=='X') && (data$category[i+1]=='C' )) {XC<-XC+1}
-    else if ((data$category[i]=='X') && (data$category[i+1]=='X' )) {XX<-XX+1}  
-    return(c(AA,AB,AC,AX,BA,BB,BC,BX,CA,CB,CC,CX,XA,XB,XC,XX))
-  }
-}
+
 ```
 
 Now, I apply this function to each participant's data and then print out the table.
@@ -178,12 +153,11 @@ Now, I apply this function to each participant's data and then print out the tab
 ```{r}
 # step1: count in each media for each subject
 df4 %>% 
-  group_by(ParticipantName,MediaName) %>%
-  mutate(AA=count_transition(category)[1],
+  group_by(ParticipantName, StudioTestName, Group, condt) %>%
+  summarize(AA=count_transition(category)[1],
          AB=count_transition(category)[2],
          AC=count_transition(category)[3],
-         AD=count_transition(category)[4],
->>>>>>> eb027e3fa0dc725a148a2be8691842b5d635c790
+         AX=count_transition(category)[4],
          BA=count_transition(category)[5],
          BB=count_transition(category)[6],
          BC=count_transition(category)[7],
@@ -195,11 +169,14 @@ df4 %>%
          XA=count_transition(category)[13],
          XB=count_transition(category)[14],
          XC=count_transition(category)[15],
-<<<<<<< HEAD
          XX=count_transition(category)[16] ) -> df5
-# step 2: count transivity for each subject
+# step 2: count transivity for each subject, and each condition
+df5$Condition2<-gsub(".*[_]([^.]+)[_].*", "\\1", df5$condt)
+df5$Condition<-gsub(".*[_]([^.]+)", "\\1", df5$Condition2)
+table(df5$Condition)
+df5$Condition[df5$Condition=="clock"] <-"Clock"
 df5 %>% 
-  group_by(ParticipantName) %>%
+  group_by(ParticipantName,StudioTestName, Group, Condition) %>%
   summarise(AA=sum(AA),
          AB=sum(AB),
          AC=sum(AC),
@@ -219,7 +196,7 @@ df5 %>%
 ```
 
 ```{r export-data}
-write.table(df6, "data/all_soc_subjects_transitional_probability_r.txt", sep="\t", row.names = FALSE)
+write.table(df6, "data-R01A/R01_A_TD_transitional_probability.txt", sep="\t", row.names = FALSE)
 ```
 
 write.table(df4, "data/soc_r.txt", sep="\t", row.names = FALSE)
