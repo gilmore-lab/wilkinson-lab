@@ -1,0 +1,268 @@
+---
+title: "Cumulative looking plots"
+author: "Rick Gilmore"
+date: "`r Sys.time()`"
+output: html_document
+---
+
+# Purpose
+
+This document describes Rick Gilmore's efforts to create plots to visualize the accumulation of looking times to different categories of visual stimuli in one of the Wilkinson R01 projects.
+The idea is to take as input a time series of fixations within a trial, categorized by the three categories--target-target (AA), target-semantically related (AB), target-distractor (AC), and target-white space (AX)--and show cumulative looking to across a trial.
+Our thought is that this will help us visualize how the amount of fixation time is accumulating, including rates of accumulation and switches among different categories.
+An extension would involve normalizing the horizontal axis (time), but the total response time and the vertical axis (accumulated time), but the total looking time.
+
+# Setup
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse) # for pipe %>% function
+```
+
+## Finding data
+
+The relevant data are in Box.
+
+The parent project folder is `~/Box/R01 Project 2 Data for Yiming&Rick/R01A-C files for transitional probabilities/`, and the files are in `.xlsx` format.
+
+## Relevant packages
+
+We'll use the `readxl` package from the `tidyverse` group of packages.
+
+```{r}
+if (!require(readxl)){
+  install.packages(readxl)
+}
+```
+
+
+# Import data
+
+```{r}
+fix_files <- list.files('~/Box/R01 Project 2 Data for Yiming&Rick/R01A-C files for transitional probabilities', pattern = '\\.xlsx$', full.names = TRUE)
+
+fix_files
+```
+
+Let's import the first file and explore its contents.
+
+**Set this chunk to `eval=FALSE` since we know import does not work**
+
+```{r, eval=FALSE}
+f_basename <- basename(fix_files[1])
+f_trimname <- stringr::str_remove(f_basename[1], pattern = '\\.xlsx')
+f_trimname
+
+a_ds_df <- read_xls(fix_files[1])
+```
+Ok, that did not work.
+Let's open in Excel and see what's going on.
+The file is large (10.4 MB).
+That could be a problem.
+
+I manually exported it as a CSV.
+
+```{r}
+csv_files <- list.files('~/Box/R01 Project 2 Data for Yiming&Rick/R01A-C files for transitional probabilities', pattern = '\\.csv$', full.names = TRUE)
+csv_files
+```
+
+Let's see if we can import the CSV.
+
+```{r}
+a_ds_df <- readr::read_csv(csv_files[2])
+```
+
+Yes, that seems to have worked.
+
+We now list the column names to determine what to keep and what to drop.
+
+```{r}
+names(a_ds_df)
+```
+
+For a first pass, let's keep columns 3-17:
+
+   [3] "ParticipantName"               
+   [4] "[Participant Type]Value"       
+   [5] "MediaName"                     
+   [6] "RecordingTimestamp"            
+   [7] "MouseEventIndex"               
+   [8] "MouseEvent"                    
+   [9] "MouseEventX (ADCSpx)"          
+  [10] "MouseEventY (ADCSpx)"          
+  [11] "MouseEventX (MCSpx)"           
+  [12] "MouseEventY (MCSpx)"           
+  [13] "FixationIndex"                 
+  [14] "GazeEventType"                 
+  [15] "GazeEventDuration"             
+  [16] "FixationPointX (MCSpx)"        
+  [17] "FixationPointY (MCSpx)" 
+  
+```{r}
+a_ds_trim <- a_ds_df[,3:17]
+```
+
+How many participants?
+
+```{r}
+unique(a_ds_trim$ParticipantName)
+```
+
+Ok, let's see the structure of these data.
+
+```{r}
+str(a_ds_trim)
+```
+
+I'm going to guess that `RecordingTimestamp` is time in ms from the start of the study.
+
+Let's look at `MediaName`.
+
+```{r}
+unique(a_ds_trim$MediaName)
+```
+
+I think that the `*.wmv` values are the movies that gave the auditory cue for the subsequent search.
+The subsequent searches were then on `{White,Color}_{wide,SOC,corners,Clock}_[2-8].png`
+If this is correct, we can eliminate rows that do not have `.png` in the `MediaName`.
+
+```{r}
+a_ds <- a_ds_trim %>%
+  dplyr::filter(., stringr::str_detect(MediaName, pattern = '\\.png'))
+```
+
+Now, let's generate new variables for the background condition {White,Color} and the layout {wide,SOC,corners,Clock}.
+
+```{r}
+a_ds <- a_ds %>%
+  dplyr::mutate(., bgnd = stringr::str_extract(MediaName, pattern='Color|White')) %>%
+  dplyr::mutate(., layout = stringr::str_extract(MediaName, pattern='wide|SOC|corners|Clock')) %>%
+  dplyr::mutate(cond_index = stringr::str_extract(MediaName, pattern='[0-9]'))
+
+# Convert NA to "1"
+a_ds <- a_ds %>%
+  dplyr::mutate(., cond_index = if_else(is.na(cond_index), "1", cond_index))
+
+unique(a_ds$cond_index)
+```
+
+# Plot one participant and one condition
+
+List unique participants again.
+
+```{r}
+unique(a_ds$ParticipantName)
+this_participant <- unique(a_ds$ParticipantName)[1]
+```
+
+Let's also pick the display condition factors, `bgnd` and `layout`.
+
+```{r}
+(this_bgnd <- unique(a_ds$bgnd)[1])
+(this_layout <- unique(a_ds$layout)[1])
+```
+
+Select fixations for this trial.
+
+```{r}
+this_trial <- a_ds %>%
+  filter(., ParticipantName == this_participant,
+         bgnd == this_bgnd, 
+         layout == this_layout)
+
+str(this_trial)
+```
+
+It looks like the `FixationIndex` changes more slowly than the `RecordingTimestamp` variable.
+
+Let's plot `GazeEventDuration` by `FixationIndex`.
+
+```{r}
+this_trial %>%
+  ggplot(.) +
+  aes(x=FixationIndex, y=GazeEventDuration) +
+  geom_point()
+```
+
+There's a big gap in `FixationIndex`. Let's look at this variable more closely.
+
+```{r}
+this_trial %>%
+  ggplot(.) +
+  aes(x = 1:length(FixationIndex), y = FixationIndex) +
+  geom_point()
+```
+
+Let's look at the `RecordingTimestamp` and `FixationIndex`.
+
+```{r}
+this_trial %>%
+  ggplot(.) +
+  aes(x = RecordingTimestamp, y = FixationIndex) +
+  geom_point()
+```
+
+Ok. There's definitely a considerable gap.
+I wonder whether I've combined two trials somehow.
+
+It should still be possible to make a cumulative looking plot.
+I wonder if there are duplicates in `FixationIndex`?
+
+```{r}
+this_trial$FixationIndex[1:50]
+```
+
+Yes, there are.
+
+Are these matched by duplicate `GazeEventDuration` values?
+
+```{r}
+this_trial$GazeEventDuration[1:50]
+```
+
+Yes.
+So, I can group by `FixationIndex` and get a more useful subset.
+
+```{r}
+this_trial_fixations <- this_trial %>%
+  dplyr::group_by(., FixationIndex) %>%
+  dplyr::summarize(., fix_ms = mean(GazeEventDuration),
+                   fix_start = min(RecordingTimestamp)) %>%
+  dplyr::mutate(., cum_fix = cumsum(fix_ms))
+```
+```{r}
+this_trial_fixations %>%
+  ggplot(.) +
+  aes(x = fix_start, y = cum_fix) +
+  geom_point()
+```
+ 
+ To fix the scale, let's just take the first set where the `fix_start` is less than 100,000.
+ 
+```{r}
+this_trial_fixations %>%
+  dplyr::filter(., fix_start < 100000) %>%
+  ggplot(.) +
+  aes(x = fix_start, y = cum_fix) +
+  geom_point()
+```
+ 
+Even those look like trials.
+They're spaced apart by 20,000+ milliseconds.
+Let's filter even more.
+
+```{r}
+this_trial_fixations %>%
+  dplyr::filter(., fix_start < 20000) %>%
+  ggplot(.) +
+  aes(x = fix_start, y = cum_fix) +
+  geom_point()
+```
+
+So, it looks like I need a way to parse by trial in order to make the cumulative sums work.
+I also need a way to determine what target the fixations are directed to.
+I think the fixation target is in the long set of columns I omitted.
+
+
