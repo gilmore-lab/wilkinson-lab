@@ -1,8 +1,13 @@
 ---
 title: "Cumulative looking plots"
+subtitle: "Version 1.0"
 author: "Rick Gilmore"
 date: "`r Sys.time()`"
-output: html_document
+output: 
+  html_document:
+    toc: true
+    toc_levels: 3
+    toc_float: true
 ---
 
 # Purpose
