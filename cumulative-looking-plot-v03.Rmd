@@ -128,7 +128,6 @@ df_new <- a_ds_df %>%
                      str_replace_all("\\[", ""))
 ```
 
-
 Yay! That works.
 
 Let's then select one participant.
@@ -163,7 +162,7 @@ df_longer <- df_short %>%
   pivot_longer(
     cols = `1c-wide-swing]hit`:`32x-wide-all]hit_1`,
     names_pattern = "([0-9]+)([abcx])\\-([a-z]+)\\-([a-z\\-123]+)]hit_?(1?)",
-    names_to = c("trial", "category", "layout", "target", "fix_hr"),
+    names_to = c("trial", "category", "layout", "target", "fix_here"),
     values_to = "count"
   ) %>%
   filter(., count > 0)
@@ -177,7 +176,7 @@ Let's trim some of the other fields I don't need.
 df_longer <- df_longer %>%
   dplyr::select(., -studioprojectname, 
                 -studiotestname,
-                -`participant typevalue`,
+                -`participant type]value`,
                 -medianame,
                 -mouseeventindex,
                 -mouseevent,
@@ -189,22 +188,41 @@ df_longer <- df_longer %>%
                 -`fixationpointx (mcspx)`,
                 -`fixationpointy (mcspx)`) %>%
   dplyr::arrange(., trial, fixationindex, recordingtimestamp)
+```
+
+```{r}
+df_longer <- df_longer %>%
+  dplyr::rename(., pid = participantname,
+                ms = recordingtimestamp,
+                fix_index = fixationindex,
+                fix_ms = gazeeventduration,
+  ) %>%
+  dplyr::mutate(., trial = as.numeric(trial))
 
 write_csv(df_longer, '~/Desktop/longer.csv')
 ```
 
 Note that the `category` variable for the AOI includes `x` for trials where the participant is also looking at one of the other categories.
 
+Krista thinks we can filter that for now since we don't really care about the whitespace fixations at this point.
+We'll also see if the `fix_here` flag works and filter on it.
+
+```{r}
+df_longer <- df_longer %>%
+  dplyr::filter(., category %in% c('a', 'b', 'c')) %>%
+  dplyr::arrange(., trial, ms)
+```
+
 ```{r}
 n_aois_per <- df_longer %>%
-  dplyr::arrange(., trial, fixationindex, recordingtimestamp) %>%
-  dplyr::group_by(., recordingtimestamp) %>%
+  dplyr::arrange(., trial, fix_index, ms) %>%
+  dplyr::group_by(., ms) %>%
   dplyr::summarize(., n_aois = cumsum(count))
 
 these_aois <- (n_aois_per$n_aois == 1)
 
 df_longer <- df_longer %>%
-  dplyr::arrange(., trial, fixationindex, recordingtimestamp) 
+  dplyr::arrange(., trial, fix_index, ms) 
 
 df_merge <- df_longer %>%
   dplyr::mutate(., n_aois_per_fix = n_aois_per$n_aois) %>%
@@ -235,7 +253,7 @@ this_trial <- df_merge %>%
 ```{r}
 this_trial %>%
   ggplot(.) +
-  aes(x=fixationindex, y=gazeeventduration) +
+  aes(x=fix_index, y=fix_ms) +
   geom_point()
 ```
 
@@ -243,10 +261,10 @@ Let's generate cumulative sums.
 
 ```{r}
 this_trial_fixations <- this_trial %>%
-  dplyr::group_by(., category, fixationindex) %>%
-  dplyr::summarize(., fix_ms = mean(gazeeventduration),
-                   fix_start = min(recordingtimestamp)) %>%
-  dplyr::arrange(., fixationindex)
+  dplyr::group_by(., category, fix_index) %>%
+  dplyr::summarize(., fix_ms = mean(fix_ms),
+                   fix_start = min(ms)) %>%
+  dplyr::arrange(., fix_index)
 
 this_trial_fixations_cum_sum <- this_trial_fixations %>%
   dplyr::group_by(., category) %>%
@@ -258,7 +276,8 @@ this_trial_fixations_cum_sum <- this_trial_fixations %>%
 this_trial_fixations_cum_sum %>%
   ggplot(.) +
   aes(x = fix_start, y = cum_fix, color = category) +
-  geom_point()
+  geom_point() +
+  geom_line()
 ```
  
  ## Same participant, multiple trials
@@ -268,10 +287,10 @@ df_merge <- df_merge %>%
   dplyr::mutate(., trial = as.numeric(trial))
 
 these_fixations <- df_merge %>%
-  dplyr::group_by(., trial, layout, target, fixationindex, category) %>%
-  dplyr::summarize(., fix_ms = mean(gazeeventduration),
-                   fix_start = min(recordingtimestamp)) %>%
-  dplyr::arrange(., trial, fixationindex, category)
+  dplyr::group_by(., trial, layout, target, fix_index, category) %>%
+  dplyr::summarize(., fix_ms = mean(fix_ms),
+                   fix_start = min(ms)) %>%
+  dplyr::arrange(., trial, fix_index, category)
 
 these_fixations_cum_sum <- these_fixations %>%
   dplyr::arrange(., fix_start) %>%
@@ -284,30 +303,24 @@ these_fixations_cum_sum <- these_fixations %>%
 ```
  
 ```{r}
-these_fixations_cum_sum %>%
-  ggplot(.) +
-  aes(x = fix_start, y = cum_fix, color = category) +
-  geom_point() +
-  facet_wrap(~ trial)
-```
-
-I do not want to use `facet_wrap()` because it puts the time basis on the same scale.
-
-```{r}
-plot_this_trial <- function(select_trial = 1) {
+plot_this_trial <- function(select_trial = 1, save_it = FALSE) {
   this_trial <- dplyr::filter(these_fixations_cum_sum, trial == select_trial)
-  ggplot(this_trial) +
+  p <- ggplot(this_trial) +
     aes(x = fix_start, y = cum_fix, color = category) +
     geom_point() +
     ggtitle(paste0("Participant TR | Trial ", this_trial$trial, ' | ',
                    this_trial$target, ' | ', this_trial$layout)) +
     geom_line()
+  
+  if (save_it) {
   ggsave(paste0('img/', 'TR-', this_trial$trial, '-', 
                 this_trial$target, '-', this_trial$layout, '.png'),
-         device = 'png')
+         device = 'png')    
+  }
+  p
 }
 
-plot_this_trial(2)
+plot_this_trial(4)
 ```
 
 ```{r}

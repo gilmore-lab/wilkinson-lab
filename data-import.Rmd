@@ -1,0 +1,67 @@
+---
+title: "Data Import"
+author: "Rick Gilmore"
+date: "`r Sys.time()`"
+output: html_document
+---
+
+# Purpose
+
+To import the Wilkinson lab data files in `.xlsx` format, and export CSVs for each participant.
+
+# Set-up
+
+```{r}
+library(tidyverse)
+```
+
+# Import
+
+We focus first on the files in `r (project_dir <- '~/Box/R01 Project 2 Data for Yiming&Rick/R01A-C files for transitional probabilities')`.
+
+
+```{r load-csv}
+csv_files <- list.files(project_dir, pattern = '\\.csv$', full.names = TRUE, )
+csv_files
+```
+
+We open the second file.
+
+```{r open-2nd}
+df <- readr::read_csv(csv_files[2])
+```
+
+List the variable names.
+
+```{r show-names}
+names(df)
+```
+
+Now, list the unique participant ids.
+
+```{r}
+p_ids <- unique(df$ParticipantName)
+p_ids
+```
+
+Write a helper function to filter data for each participant and export as CSV.
+
+```{r define import-export-function}
+import_by_sub_then_export <- function(this_p_id, df) {
+  this_p_df <- dplyr::filter(df, ParticipantName == this_p_id)
+  readr::write_csv(this_p_df, path = paste0('csv/', this_p_id, '-raw.csv'))
+}
+```
+
+Test the function with the first participant in the list, e.g., `p_ids[1]`
+
+```{r test-function}
+import_by_sub_then_export(p_ids[1], df)
+```
+
+Run across list of `p_id`s.
+
+```{r map-function-across-list}
+purrr::map(p_ids, import_by_sub_then_export, df)
+```
+

@@ -1,0 +1,624 @@
+---
+title: "Calculate display statistics"
+author: "Rick Gilmore"
+date: "`r Sys.time()`"
+output: html_document
+params:
+  project_dir: '~/Box/R01 Project 2 Data for Yiming&Rick/R01A-C files for transitional probabilities'
+---
+
+# Purpose
+
+To calculate basic statistics about the displays shown to participants.
+
+# Set-up
+
+```{r}
+library(tidyverse)
+```
+
+# Import single file
+
+List the files in `csv/`.
+
+```{r}
+csv_files <- list.files('csv', pattern = '\\.csv$', full.names = TRUE, )
+csv_files
+```
+
+Import the last one, e.g., `csv_files[5]`.
+
+```{r}
+df <- readr::read_csv(csv_files[5])
+```
+
+# Summarize single file
+
+Participant file includes two runs with 'White' and 'Color'.
+
+The `StudioTestName` variable has values \{`W01`, `CR01`\}.
+
+```{r}
+df_white_all <- df %>%
+  dplyr::filter(., str_detect(StudioTestName, 'WO1'))
+df_color_all <- df %>%
+  dplyr::filter(., str_detect(StudioTestName, 'CRO1'))
+```
+
+## Unique media names
+
+Each experimental trial consists of a fixation `Slide03.jpg`, followed by a prompt `*.wmv`, and then a display `*.png`.
+
+We can extract the main times for these events as follows.
+
+```{r}
+df_white <- df_white_all %>%
+  dplyr::select(., ParticipantName, RecordingTimestamp, MediaName) %>%
+  #dplyr::filter(., str_detect(MediaName, 'White')) %>%
+  dplyr::arrange(., ParticipantName, RecordingTimestamp)
+
+df_color <- df_color_all %>%
+  dplyr::select(., ParticipantName, RecordingTimestamp, MediaName) %>%
+  #dplyr::filter(., str_detect(MediaName, 'Color')) %>%
+  dplyr::arrange(., ParticipantName, RecordingTimestamp)
+```
+
+```{r}
+df_white_media <- df_white %>%
+  dplyr::filter(., !is.na(MediaName),
+                !str_detect(MediaName, 'Slide03.jpg'),
+                !str_detect(MediaName, 'job')) %>%
+  dplyr::arrange(., RecordingTimestamp) %>%
+  dplyr::group_by(., MediaName) %>%
+  dplyr::summarise(., event_start = min(RecordingTimestamp),
+                   event_end = max(RecordingTimestamp)) %>%
+  dplyr::arrange(., event_start)
+
+df_color_media <- df_color %>%
+  dplyr::filter(., !is.na(MediaName),
+                !str_detect(MediaName, 'Slide03.jpg'),
+                !str_detect(MediaName, 'job')) %>%
+  dplyr::arrange(., RecordingTimestamp) %>%
+  dplyr::group_by(., MediaName) %>%
+  dplyr::summarise(., event_start = min(RecordingTimestamp),
+                   event_end = max(RecordingTimestamp)) %>%
+  dplyr::arrange(., event_start)
+```
+
+Now, let's try to estimate the trial number for the `.wmv` and `.png` files separately.
+
+Write a helper function to detect unique values in this sequence.
+
+The function moves along a sequence and only adds a new value when there is a change from the previous one.
+It's not elegant or efficient, but it works.
+I tried `unique()`, but had some issues.
+
+```{r, eval=FALSE}
+extract_media_value_sequence <- function(x) {
+  not_nas <- !(is.na(x))
+  these_xs <- NULL
+  prior_x <- ""
+  x_clean <- x[not_nas]
+  for (i in 1:length(x_clean)) {
+    this_x <- x_clean[i]
+    if (!is.na(this_x)) {
+      if (this_x != prior_x) {
+        these_xs <- c(these_xs, this_x)
+      }
+      prior_x <- this_x      
+    }
+  }
+  these_xs
+}
+```
+
+
+### White events
+
+The strategy here is convoluted, but I think it works.
+
+1. Pick the 'prompt' (.wmv) and 'layout' (.png) events separately, and add a `trial_n` variable.
+2. Merge the two types and compute `trial_start` and `trial_end`.
+
+```{r}
+df_white_media_png <- df_white_media %>%
+  dplyr::arrange(., event_start) %>%
+  dplyr::filter(., str_detect(MediaName, 'png')) %>%
+  dplyr::mutate(., trial_n = 1:length(MediaName))
+
+df_white_media_wmv <- df_white_media %>%
+  dplyr::arrange(., event_start) %>%
+  dplyr::filter(., str_detect(MediaName, 'wmv')) %>%
+  dplyr::mutate(., trial_n = 1:length(MediaName))
+
+df_white_merge <- rbind(df_white_media_png, df_white_media_wmv)
+df_white_merge <- df_white_merge %>%
+  dplyr::arrange(., trial_n, event_start) %>%
+  dplyr::group_by(., trial_n) %>%
+  dplyr::summarize(., trial_n, MediaName, event_start, event_end, 
+                   trial_start = min(event_start), trial_end = max(event_end))
+```
+
+3. Create separate data frames again for the 'display' and 'prompt' portions and extract for each type the relevant metadata from the `MediaName` variable.
+
+4. Then, use `dplyr::inner_join()` to combine the data frames and drop unneeded variables.
+
+```{r}
+df_white_disp_parse <- df_white_merge %>%
+  dplyr::filter(., str_detect(MediaName, 'png')) %>%
+  dplyr::mutate(., 
+                       bgnd = str_match(MediaName, "(Color|White)_(SOC|wide|corners|[Cc]lock)")[,2],
+                       layout = str_match(MediaName, "(Color|White)_(SOC|wide|corners|[Cc]lock)")[,3]) %>%
+  dplyr::select(., trial_n, bgnd, layout)
+
+df_white_prompt_parse <- df_white_merge %>%
+  dplyr::filter(., str_detect(MediaName, 'wmv')) %>%
+  dplyr::mutate(., speaker = str_match(MediaName, "([A-Za-z]+)_([a-z]+)\\.wmv")[,2],
+                target = str_match(MediaName, "([A-Za-z]+)_([a-z]+)\\.wmv")[,3])
+
+df_white_trials <- dplyr::inner_join(df_white_disp_parse, df_white_prompt_parse, by="trial_n") %>%
+  dplyr::select(., trial_n, layout, trial_start, trial_end, speaker, target, bgnd, layout)
+```
+
+Let's compute and plot `trial_ms` just to see if this works.
+
+```{r}
+df_white_trials %>%
+  dplyr::mutate(., trial_ms = trial_end - trial_start) %>%
+  ggplot() +
+  aes(trial_ms) +
+  geom_histogram(bins = 10)
+```
+
+And how about `trial_ms` by some of the conditions.
+
+```{r}
+ df_white_trials %>%
+  dplyr::mutate(., trial_ms = trial_end - trial_start) %>%
+  ggplot() +
+  aes(layout, trial_ms) +
+  geom_violin(bins = 10) +
+  geom_point()
+```
+
+### Color events
+
+We'll repeat the same procedure for the 'Color' condition.
+
+```{r}
+df_color_media_png <- df_color_media %>%
+  dplyr::arrange(., event_start) %>%
+  dplyr::filter(., str_detect(MediaName, 'png')) %>%
+  dplyr::mutate(., trial_n = 1:length(MediaName))
+
+df_color_media_wmv <- df_color_media %>%
+  dplyr::arrange(., event_start) %>%
+  dplyr::filter(., str_detect(MediaName, 'wmv')) %>%
+  dplyr::mutate(., trial_n = 1:length(MediaName))
+
+df_color_merge <- rbind(df_color_media_png, df_color_media_wmv)
+
+df_color_merge <- df_color_merge %>%
+  dplyr::arrange(., trial_n, event_start) %>%
+  dplyr::group_by(., trial_n) %>%
+  dplyr::summarize(., trial_n, MediaName, event_start, event_end, 
+                   trial_start = min(event_start), trial_end = max(event_end)) %>%
+  dplyr::mutate(., trial_ms = trial_end - trial_start)
+
+df_color_disp_parse <- df_color_merge %>%
+  dplyr::filter(., str_detect(MediaName, 'png')) %>%
+  dplyr::mutate(., 
+                       bgnd = str_match(MediaName, "(Color|White)_(SOC|wide|corners|[Cc]lock)")[,2],
+                       layout = str_match(MediaName, "(Color|White)_(SOC|wide|corners|[Cc]lock)")[,3]) %>%
+  dplyr::select(., trial_n, bgnd, layout)
+
+df_color_prompt_parse <- df_color_merge %>%
+  dplyr::filter(., str_detect(MediaName, 'wmv')) %>%
+  dplyr::mutate(., speaker = str_match(MediaName, "([A-Za-z]+)_([a-z]+)\\.wmv")[,2],
+                target = str_match(MediaName, "([A-Za-z]+)_([a-z]+)\\.wmv")[,3])
+
+df_color_trials <- dplyr::inner_join(df_color_disp_parse, df_color_prompt_parse, by="trial_n") %>%
+  dplyr::select(., trial_n, layout, trial_start, trial_end, speaker, target, bgnd, layout)
+```
+
+
+```{r}
+df_color_trials %>%
+  dplyr::mutate(., trial_ms = trial_end - trial_start) %>%
+  ggplot() +
+  aes(trial_ms) +
+  geom_histogram(bins = 10)
+```
+
+```{r}
+ df_color_trials %>%
+  dplyr::mutate(., trial_ms = trial_end - trial_start) %>%
+  ggplot() +
+  aes(layout, trial_ms) +
+  geom_violin(bins = 10) +
+  geom_point()
+```
+
+This seems to be working.
+Now, I can move on to parsing the fixations.
+
+Now, put the previous into a function.
+
+```{r}
+make_trial_cond_df <- function(df) {
+  df_media_png <- df %>%
+    dplyr::arrange(., event_start) %>%
+    dplyr::filter(., str_detect(MediaName, 'png')) %>%
+    dplyr::mutate(., trial_n = 1:length(MediaName))
+  
+  df_media_wmv <- df %>%
+    dplyr::arrange(., event_start) %>%
+    dplyr::filter(., str_detect(MediaName, 'wmv')) %>%
+    dplyr::mutate(., trial_n = 1:length(MediaName))
+  
+  df_merge <- rbind(df_media_png, df_media_wmv)
+  
+  df_merge <- df_merge %>%
+    dplyr::arrange(., trial_n, event_start) %>%
+    dplyr::group_by(., trial_n) %>%
+    dplyr::summarize(
+      .,
+      trial_n,
+      MediaName,
+      event_start,
+      event_end,
+      trial_start = min(event_start),
+      trial_end = max(event_end)
+    )
+  
+  df_disp_parse <- df_merge %>%
+    dplyr::filter(., str_detect(MediaName, 'png')) %>%
+    dplyr::mutate(
+      .,
+      bgnd = str_match(MediaName, "(Color|White)_(SOC|wide|corners|[Cc]lock)")[, 2],
+      layout = str_match(MediaName, "(Color|White)_(SOC|wide|corners|[Cc]lock)")[, 3]
+    ) %>%
+    dplyr::select(., trial_n, bgnd, layout)
+  
+  df_prompt_parse <- df_white_merge %>%
+    dplyr::filter(., str_detect(MediaName, 'wmv')) %>%
+    dplyr::mutate(
+      .,
+      speaker = str_match(MediaName, "([A-Za-z]+)_([a-z]+)\\.wmv")[, 2],
+      target = str_match(MediaName, "([A-Za-z]+)_([a-z]+)\\.wmv")[, 3]
+    )
+  
+  df_trials <- dplyr::inner_join(df_white_disp_parse,
+                                 df_white_prompt_parse, by = "trial_n") %>%
+    dplyr::select(.,
+                  trial_n,
+                  layout,
+                  trial_start,
+                  trial_end,
+                  speaker,
+                  target,
+                  bgnd,
+                  layout)
+  df_trials
+  
+}
+```
+
+Test the function.
+
+```{r}
+make_trial_cond_df(df_white_media)
+```
+
+Ok, that hard work now seems finished.
+
+## Duration
+
+### White
+
+```{r}
+(tot_dur_ms <- max(df_white$RecordingTimestamp))
+(secs <- tot_dur_ms/1000)
+(min <- secs/60)
+```
+
+### Color
+
+```{r}
+(tot_dur_ms <- max(df_color$RecordingTimestamp))
+(secs <- tot_dur_ms/1000)
+(min <- secs/60)
+```
+
+-----
+
+Old material.
+
+## Displays
+
+
+```{r white-conds}
+white_conds <- extract_media_value_sequence(df_white$MediaName)
+white_conds_df <- tibble(trial = 1:length(white_conds),
+                             MediaName = white_conds)
+
+layout_pattern <- "(Color|White)_(SOC|wide|corners|[Cc]lock)"
+bgnd_layout <- str_match(white_conds_df$MediaName, layout_pattern)
+
+white_conds_df <- white_conds_df %>%
+  mutate(., bgnd = bgnd_layout[,2],
+         layout = bgnd_layout[,3])
+
+white_conds_df
+```
+
+Based on a visual inspection, it looks like the order of the layouts was randomized across the 'Color' and 'White' background conditions.
+
+Let's turn this into a function.
+
+```{r}
+summarize_bgnd_layout <- function(df) {
+  these_conds <- extract_media_value_sequence(df$MediaName)
+  these_conds_df <- tibble(trial = 1:length(these_conds),
+                           MediaName = these_conds)
+  
+  layout_pattern <- "(Color|White)_(SOC|wide|corners|[Cc]lock)"
+  bgnd_layout <- str_match(these_conds_df$MediaName, layout_pattern)
+  
+  these_conds_df <- these_conds_df %>%
+    mutate(., bgnd = bgnd_layout[,2],
+           layout = bgnd_layout[,3])
+  
+  these_conds_df
+}
+```
+
+Test the function.
+
+```{r}
+(summarize_bgnd_layout(df_white))
+```
+
+### Calculate start and stop time of displays
+
+Let's see if we can calculate the start and stop time of the display conditions using `group_by()` and `summarize()`.
+
+```{r}
+df_white_disp_on_off <- df_white %>%
+  dplyr::filter(., str_detect(MediaName, 'Color|White')) %>%
+  dplyr::group_by(., MediaName) %>%
+  dplyr::summarize(., trial_start = min(RecordingTimestamp),
+                   trial_end = max(RecordingTimestamp)) %>%
+  dplyr::arrange(., trial_start)
+
+df_white_disp_on_off
+```
+
+Now, use this to create a new, improved trial summary function.
+
+```{r}
+summarize_trial_on_off <- function(df) {
+  this_df <- dplyr::filter(df, str_detect(MediaName, 'Color|White')) %>%
+    dplyr::group_by(., MediaName) %>%
+    dplyr::summarize(., trial_start = min(RecordingTimestamp),
+                   trial_end = max(RecordingTimestamp)) %>%
+    dplyr::arrange(., trial_start)
+  
+  layout_pattern <- "(Color|White)_(SOC|wide|corners|[Cc]lock)"
+  bgnd_layout <- str_match(this_df$MediaName, layout_pattern)
+  
+  this_df <- this_df %>%
+    mutate(., bgnd = bgnd_layout[,2],
+           layout = bgnd_layout[,3],
+           trial = 1:dim(this_df)[1]) %>%
+    dplyr::select(., trial, trial_start, trial_end, MediaName, bgnd, layout)
+
+  this_df
+}
+```
+
+Now test the function.
+
+```{r}
+df_white_on_off <- summarize_trial_on_off(df_white)
+df_white_on_off
+```
+
+That works, so now let's report trial durations.
+
+```{r}
+df_white_on_off %>%
+  dplyr::mutate(., trial_ms = trial_end - trial_start) %>%
+  dplyr::select(., trial, trial_ms)
+```
+
+And let's plot them for white...
+
+```{r}
+df_white_on_off %>%
+  dplyr::mutate(., trial_ms = trial_end - trial_start) %>%
+  ggplot(.) +
+  aes(x = layout, y = trial_ms) +
+  geom_boxplot() +
+  geom_point()
+```
+
+And for Color
+
+```{r}
+df_color_on_off <- summarize_trial_on_off(df_color)
+df_color_on_off %>%
+  dplyr::mutate(., trial_ms = trial_end - trial_start) %>%
+  ggplot(.) +
+  aes(x = layout, y = trial_ms) +
+  geom_boxplot() +
+  geom_point()
+```
+
+Recombine to make comparison plots easier.
+
+```{r}
+df_both <- rbind(df_white_on_off, df_color_on_off)
+
+df_both %>%
+  dplyr::mutate(., trial_ms = trial_end - trial_start) %>%
+  ggplot(.) +
+  aes(x = layout, y = trial_ms, group = bgnd) +
+  facet_grid(bgnd ~ .) +
+  geom_point()
+```
+
+So, it looks like the 'White' condition uses lowercase 'clock' while the 'Color' condition uses uppercase.
+
+```{r}
+df_both %>%
+  dplyr::mutate(., trial_ms = trial_end - trial_start,
+                layout = str_to_lower(layout)) %>%
+  ggplot(.) +
+  aes(x = layout, y = trial_ms) +
+  facet_grid(bgnd ~ .) +
+  geom_boxplot() +
+  # put points on top of boxplot
+  geom_point()
+```
+
+## Mouse events
+
+Lets try to extract the mouse events.
+
+```{r}
+df_white_mouse <- df %>%
+  dplyr::select(., ParticipantName, RecordingTimestamp, MediaName, MouseEventIndex,
+                MouseEvent, `MouseEventX (ADCSpx)`, `MouseEventY (ADCSpx)`,
+                `MouseEventX (MCSpx)`, `MouseEventY (MCSpx)`, FixationIndex) %>%
+  dplyr::filter(., !is.na(MouseEvent),
+                str_detect(MediaName, 'White')) %>%
+  dplyr::arrange(., RecordingTimestamp) %>%
+  dplyr::mutate(., elapsed_secs = RecordingTimestamp/1000)
+str(df_white_mouse)
+```
+
+Now, let's turn into a function
+
+```{r}
+summarize_mouse_events <- function(df) {
+  these_mouse_df <- df %>%
+    dplyr::select(
+      .,
+      RecordingTimestamp,
+      MediaName,
+      MouseEventIndex,
+      MouseEvent,
+      `MouseEventX (ADCSpx)`,
+      `MouseEventY (ADCSpx)`,
+      `MouseEventX (MCSpx)`,
+      `MouseEventY (MCSpx)`,
+      FixationIndex
+    ) %>%
+    dplyr::filter(., !is.na(MouseEvent)) %>%
+    dplyr::arrange(., RecordingTimestamp)
+  
+  layout_pattern <- "(Color|White)_(SOC|wide|corners|[Cc]lock)"
+  bgnd_layout <- str_match(these_mouse_df$MediaName, layout_pattern)
+  
+  these_mouse_df <- these_mouse_df %>%
+    mutate(., bgnd = bgnd_layout[, 2],
+           layout = bgnd_layout[, 3])
+  
+  these_mouse_df <- these_mouse_df %>%
+    dplyr::select(
+      .,
+      MouseEventIndex,
+      RecordingTimestamp,
+      MediaName,
+      bgnd,
+      layout,
+      `MouseEventY (ADCSpx)`,
+      `MouseEventX (MCSpx)`,
+      `MouseEventY (MCSpx)`,
+      FixationIndex
+    )
+  
+  these_mouse_df
+}
+```
+
+Now, test the function.
+
+```{r}
+dplyr::filter(df, str_detect(MediaName, 'White')) %>%
+  summarize_mouse_events()
+```
+
+And for 'Color'.
+
+```{r}
+dplyr::filter(df, str_detect(MediaName, 'Color')) %>%
+  summarize_mouse_events()
+```
+
+## Prompts
+
+It's harder to pull out the "Color" and "White" conditions because the prompts have their own `MediaName` values that are duplicated across both conditions.
+There is no date/timestamp to rely on.
+We have to do this separately for the two conditions.
+
+The `StudioTestName` variable has values \{`W01`, `CR01`\}.
+
+```{r}
+df_white <- df %>%
+  dplyr::filter(., str_detect(StudioTestName, 'W01'))
+df_color <- df %>%
+  dplyr::filter(., str_detect(StudioTestName, 'CR01'))
+```
+
+
+```{r}
+# Now prompts
+# df_prompt_only <- df %>%
+#   dplyr::filter(., )
+#   dplyr::filter(., str_detect(MediaName, 'wmv')) %>%
+#   dplyr::select(., RecordingTimestamp, MediaName) %>%
+#   dplyr::group_by(., MediaName) %>%
+#   dplyr::summarize(., prompt_start = min(RecordingTimestamp),
+#                    prompt_end = max(RecordingTimestamp)) %>%
+#   dplyr::arrange(., prompt_start)
+# 
+# 
+# prompts_df <- tibble(MediaName = extract_media_value_sequence(df_TR_prompt_only$medianame))
+# prompts_df$trial <- 1:dim(prompts_df)[1]
+# 
+# media_nm_pattern <- "([A-Z]{1}[a-z]+)_([a-z]+)"
+# spkr_target <- str_match(prompts_df$medianame, media_nm_pattern)
+# 
+# prompts_df <- prompts_df %>%
+#   mutate(., speaker = spkr_target[,2],
+#          target = spkr_target[,3])
+# 
+# # drop medianame since prompt has its own medianame value 
+# 
+# prompts_df <- prompts_df %>%
+#   dplyr::select(., -medianame)
+
+```
+
+## AOIs
+
+The AOI columns need to be collapsed into a single variable.
+
+```{r}
+df_white_lower <- df %>%
+  dplyr::filter(., str_detect(MediaName, 'Color')) %>%
+  purrr::set_names(~ str_to_lower(.) %>%
+                     str_replace_all("AOI|aoi", "") %>%
+                     str_replace_all("\\[", ""))
+  
+df_white_longer <- df_white_lower %>%
+  pivot_longer(
+    cols = `1c-wide-swing]hit`:`32x-wide-all]hit_1`,
+    names_pattern = "([0-9]+)([abcx])\\-([a-z]+)\\-([a-z\\-123]+)]hit_?(1?)",
+    names_to = c("aoi_trial_index", "category", "layout", "aoi", "fix_here"),
+    values_to = "count"
+  )
+```
+

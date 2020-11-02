@@ -1,0 +1,738 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# Set-up
+
+```{r}
+library(tidyverse)
+```
+
+# Import CSV
+
+```{r}
+csv_files <- list.files('~/Box/R01 Project 2 Data for Yiming&Rick/R01A-C files for transitional probabilities', pattern = '\\.csv$', full.names = TRUE, )
+csv_files
+```
+
+```{r}
+df <- readr::read_csv(csv_files[2])
+```
+
+# Data cleaning
+
+Let's parse and reformat the column names.
+
+```{r}
+df_new <- df %>%
+  purrr::set_names(~ str_to_lower(.) %>%
+                     str_replace_all("AOI|aoi", "") %>%
+                     str_replace_all("\\[", ""))
+```
+
+Let's then select one participant.
+
+```{r}
+p_ids <- unique(df_new$participantname)
+p_ids
+```
+
+Let's pick the first one.
+
+```{r}
+df_TR <- df_new[df_new$participantname == "TR",]
+```
+
+I need to write a function to sequentially pull unique values.
+
+```{r}
+extract_media_value_sequence <- function(x) {
+  not_nas <- !(is.na(x))
+  these_xs <- NULL
+  prior_x <- ""
+  x_clean <- x[not_nas]
+  for (i in 1:length(x_clean)) {
+    this_x <- x_clean[i]
+    if (!is.na(this_x)) {
+      if (this_x != prior_x) {
+        these_xs <- c(these_xs, this_x)
+      }
+      prior_x <- this_x      
+    }
+  }
+  these_xs
+}
+```
+
+## Display conditions
+
+Make a data frame with the condition information.
+This requires parsing the `medianame` for the samples that show the array (have extention `.png`) and the samples that show the prompt (have extension `.wmv`).
+
+```{r}
+df_TR_disp_only <- df_TR %>%
+  dplyr::select(., recordingtimestamp, medianame) %>%
+  dplyr::filter(., str_detect(medianame, 'White|Color')) %>%
+  dplyr::arrange(., recordingtimestamp)
+
+conditions_df <-
+  tibble(medianame = extract_media_value_sequence(df_TR_disp_only$medianame))
+
+conditions_df$trial <- 1:dim(conditions_df)[1]
+
+layout_pattern <- "(Color|White)_(SOC|wide|corners|[Cc]lock)"
+bgnd_layout <- str_match(conditions_df$medianame, layout_pattern)
+
+conditions_df <- conditions_df %>%
+  mutate(., bgnd = bgnd_layout[,2],
+         layout = bgnd_layout[,3])
+
+# Now prompts
+df_TR_prompt_only <- df_TR %>%
+  dplyr::select(., recordingtimestamp, medianame) %>%
+  dplyr::filter(., !is.na(medianame),
+                str_detect(medianame, 'wmv')) %>%
+  dplyr::arrange(., recordingtimestamp)
+
+prompts_df <- tibble(medianame = extract_media_value_sequence(df_TR_prompt_only$medianame))
+prompts_df$trial <- 1:dim(prompts_df)[1]
+
+media_nm_pattern <- "([A-Z]{1}[a-z]+)_([a-z]+)"
+spkr_target <- str_match(prompts_df$medianame, media_nm_pattern)
+
+prompts_df <- prompts_df %>%
+  mutate(., speaker = spkr_target[,2],
+         target = spkr_target[,3])
+
+# drop medianame since prompt has its own medianame value 
+
+prompts_df <- prompts_df %>%
+  dplyr::select(., -medianame)
+
+stims_df <- dplyr::left_join(conditions_df, prompts_df, by = c('trial'))
+str(stims_df)
+```
+
+There are 64 trials in the design.
+
+## Process button presses
+
+We need to determine when the trials end.
+
+It looks like the relevant events have a mousevent and a medianame with 'Color|White' in the title.
+
+```{r}
+df_mouse <- df_TR %>%
+  dplyr::select(., medianame, recordingtimestamp, mouseeventindex,  mouseevent) %>%
+  dplyr::filter(., !is.na(mouseevent),
+                str_detect(medianame, 'White|Color')) %>%
+  dplyr::mutate(., elapsed_secs = recordingtimestamp/1000)
+str(df_mouse)
+```
+
+Let's plot just for fun.
+
+```{r}
+df_mouse %>%
+  ggplot(.) +
+  aes(elapsed_secs, mouseeventindex) +
+  geom_point()
+```
+
+Ok, so there are 64 mouse events.
+Why am I getting only 32 trials in the AOIs?
+
+## Process AOI information
+
+Take wide columns and make longer.
+
+```{r}
+df_TR_longer <- df_TR %>%
+  pivot_longer(
+    cols = `1c-wide-swing]hit`:`32x-wide-all]hit_1`,
+    names_pattern = "([0-9]+)([abcx])\\-([a-z]+)\\-([a-z\\-123]+)]hit_?(1?)",
+    names_to = c("aoi_trial_index", "category", "layout", "aoi", "fix_here"),
+    values_to = "count"
+  )
+```
+
+Trim some columns.
+
+```{r}
+df_TR_trim <- df_TR_longer %>%
+  dplyr::select(., -studioprojectname, 
+                -studiotestname,
+                -`participant type]value`,
+                -mouseeventindex,
+                -mouseevent,
+                -`mouseeventx (adcspx)`,
+                -`mouseeventy (adcspx)`,
+                -`mouseeventx (mcspx)`,
+                -`mouseeventy (mcspx)`,
+                -gazeeventtype,
+                -`fixationpointx (mcspx)`,
+                -`fixationpointy (mcspx)`) %>%
+  dplyr::filter(., !is.na(medianame),
+                str_detect(medianame, 'White|Color'),
+                !is.na(count)) %>%
+  dplyr::arrange(., fixationindex, recordingtimestamp)
+```
+
+## Fixations during display period
+
+Ok, back to the fixations.
+
+```{r}
+df_TR_trim <- df_TR_trim %>%
+  dplyr::filter(., category %in% c('a', 'b', 'c')) %>%
+  # convert trial to integer
+  dplyr::mutate(., aoi_trial_index = as.numeric(aoi_trial_index),
+                secs = recordingtimestamp/1000) %>%
+  dplyr::select(., -recordingtimestamp) %>%
+  dplyr::arrange(., fixationindex, secs)
+
+dim(df_TR_trim)
+```
+
+Do some work to eliminate the rows that show both a fixation to one of the target categories (a, b, or c) AND to anywhere on the screen (whitespace) or x.
+
+```{r}
+n_aois_per <- df_TR_trim %>%
+  dplyr::arrange(., fixationindex, secs) %>%
+  dplyr::group_by(., secs) %>%
+  dplyr::summarize(., n_aois = cumsum(count))
+
+#these_aois <- (n_aois_per$n_aois == 1)
+
+df_TR_trim <- df_TR_trim %>%
+  dplyr::arrange(., fixationindex, secs) 
+
+df_merge <- df_TR_trim %>%
+  dplyr::mutate(., n_aois_per_fix = n_aois_per$n_aois) %>%
+  dplyr::filter(., n_aois_per_fix == 1) %>%
+  dplyr::arrange(., secs) %>%
+  dplyr::filter(., count == 1)
+```
+
+# Plot one participant and one trial
+
+How many trials?
+
+```{r}
+df_merge$aoi_trial_index
+```
+
+Looks like there are 32.
+
+## Trial 1
+
+Select fixations for trial 1.
+
+```{r}
+this_trial <- df_merge %>%
+  filter(., aoi_trial_index == 1)
+```
+
+```{r}
+this_trial %>%
+  ggplot(.) +
+  aes(x=secs, y=gazeeventduration) +
+  geom_point()
+```
+
+Let's generate cumulative sums.
+
+```{r}
+this_trial_fixations <- this_trial %>%
+  dplyr::filter(., count == 1) %>%
+  dplyr::group_by(., category, fixationindex) %>%
+  dplyr::summarize(., fix_ms = mean(gazeeventduration),
+                   fix_start = min(secs),
+                   fix_end = max(secs)) %>%
+  dplyr::arrange(., fixationindex)
+
+this_trial_fixations_cum_sum <- this_trial_fixations %>%
+  dplyr::group_by(., category) %>%
+  dplyr::summarize(., fixationindex = fixationindex,
+                   cum_fix = cumsum(fix_ms), 
+                   fix_start = fix_start, 
+                   fix_end = fix_end) %>%
+  dplyr::arrange(., fixationindex, fix_start)
+
+start_cum_sum <- c(0, this_trial_fixations_cum_sum$cum_fix[1:length(this_trial_fixations_cum_sum)-1])
+
+xx <- this_trial_fixations_cum_sum %>%
+  tidyr::pivot_longer(., c(fix_start, fix_end), names_to = "fix_evt", values_to = "ms") %>%
+  dplyr::arrange(., fixationindex, ms)
+
+yy <- this_trial_fixations_cum_sum %>%
+  dplyr::select(., fixationindex, cum_fix) %>%
+  dplyr::mutate(., cum_fix_start = c(0, cum_fix[1:length(cum_fix)-1])) %>%
+  tidyr::pivot_longer(., c(cum_fix_start, cum_fix), names_to = "sum_cat", values_to = "cum_sum_ms") %>%
+  dplyr::arrange(., fixationindex, cum_sum_ms)
+
+zz <- xx
+zz$cum_sum_ms = yy$cum_sum_ms
+```
+
+```{r}
+zz %>%
+  dplyr::arrange(., category, fixationindex) %>%
+  filter(., category == 'a') %>%
+  ggplot(.) +
+  aes(x = ms, y = cum_sum_ms, color = category) +
+  geom_point() +
+  geom_line()
+```
+
+```{r}
+this_trial_fixations_cum_sum %>%
+  ggplot(.) +
+  aes(x = fix_start, y = cum_fix, color = category) +
+  geom_point() +
+  geom_line() +
+  ylim(0,max(this_trial_fixations_cum_sum$cum_fix))
+```
+
+## Trial 2
+
+Select fixations for trial 2.
+
+```{r}
+this_trial <- df_merge %>%
+  filter(., aoi_trial_index == 2)
+```
+
+```{r}
+this_trial %>%
+  ggplot(.) +
+  aes(x=fixationindex, y=gazeeventduration) +
+  geom_point()
+```
+
+Let's generate cumulative sums.
+
+```{r}
+this_trial_fixations <- this_trial %>%
+  dplyr::filter(., count == 1) %>%
+  dplyr::group_by(., category, fixationindex) %>%
+  dplyr::summarize(., fix_ms = mean(gazeeventduration),
+                   fix_start = min(secs),
+                   fix_end = max(secs)) %>%
+  dplyr::arrange(., fixationindex)
+
+this_trial_fixations_cum_sum <- this_trial_fixations %>%
+  dplyr::group_by(., category) %>%
+  dplyr::summarize(., fixationindex = fixationindex,
+                   cum_fix = cumsum(fix_ms), 
+                   fix_start = fix_start, 
+                   fix_end = fix_end) %>%
+  dplyr::arrange(., fixationindex, fix_start)
+
+start_cum_sum <- c(0, this_trial_fixations_cum_sum$cum_fix[1:length(this_trial_fixations_cum_sum)-1])
+
+xx <- this_trial_fixations_cum_sum %>%
+  tidyr::pivot_longer(., c(fix_start, fix_end), names_to = "fix_evt", values_to = "ms") %>%
+  dplyr::arrange(., fixationindex, ms)
+
+yy <- this_trial_fixations_cum_sum %>%
+  dplyr::select(., fixationindex, cum_fix) %>%
+  dplyr::mutate(., cum_fix_start = c(0, cum_fix[1:length(cum_fix)-1])) %>%
+  tidyr::pivot_longer(., c(cum_fix_start, cum_fix), names_to = "sum_cat", values_to = "cum_sum_ms") %>%
+  dplyr::arrange(., fixationindex, cum_sum_ms)
+
+zz <- xx
+zz$cum_sum_ms = yy$cum_sum_ms
+```
+
+```{r}
+zz %>%
+  dplyr::arrange(., category, fixationindex) %>%
+#  filter(., category == 'a') %>%
+  ggplot(.) +
+  aes(x = ms, y = cum_sum_ms, color = category) +
+  geom_point() +
+  geom_line()
+```
+
+```{r}
+this_trial_fixations_cum_sum %>%
+  ggplot(.) +
+  aes(x = fix_start, y = cum_fix, color = category) +
+  geom_point() +
+  geom_line()
+```
+
+## Trial 3
+
+Select fixations for trial 3.
+
+```{r}
+this_trial <- df_merge %>%
+  filter(., aoi_trial_index == 28)
+```
+
+```{r}
+this_trial %>%
+  ggplot(.) +
+  aes(x=fixationindex, y=gazeeventduration) +
+  geom_point()
+```
+
+Let's generate cumulative sums.
+
+```{r}
+this_trial_fixations <- this_trial %>%
+  dplyr::filter(., count == 1) %>%
+  dplyr::group_by(., category, fixationindex) %>%
+  dplyr::summarize(., fix_ms = mean(gazeeventduration),
+                   fix_start = min(secs),
+                   fix_end = max(secs)) %>%
+  dplyr::arrange(., fixationindex)
+
+this_trial_fixations_cum_sum <- this_trial_fixations %>%
+  dplyr::group_by(., category) %>%
+  dplyr::summarize(., fixationindex = fixationindex,
+                   cum_fix = cumsum(fix_ms), 
+                   fix_start = fix_start, 
+                   fix_end = fix_end) %>%
+  dplyr::arrange(., fixationindex, fix_start)
+
+start_cum_sum <- c(0, this_trial_fixations_cum_sum$cum_fix[1:length(this_trial_fixations_cum_sum)-1])
+
+xx <- this_trial_fixations_cum_sum %>%
+  tidyr::pivot_longer(., c(fix_start, fix_end), names_to = "fix_evt", values_to = "ms") %>%
+  dplyr::arrange(., fixationindex, ms)
+
+yy <- this_trial_fixations_cum_sum %>%
+  dplyr::select(., fixationindex, cum_fix) %>%
+  dplyr::mutate(., cum_fix_start = c(0, cum_fix[1:length(cum_fix)-1])) %>%
+  tidyr::pivot_longer(., c(cum_fix_start, cum_fix), names_to = "sum_cat", values_to = "cum_sum_ms") %>%
+  dplyr::arrange(., fixationindex, cum_sum_ms)
+
+zz <- xx
+zz$cum_sum_ms = yy$cum_sum_ms
+```
+
+```{r}
+zz %>%
+  dplyr::arrange(., category, fixationindex) %>%
+  #filter(., category == 'a') %>%
+  ggplot(.) +
+  aes(x = ms, y = cum_sum_ms, color = category) +
+  geom_point() +
+  geom_line()
+```
+
+```{r}
+this_trial_fixations_cum_sum %>%
+  ggplot(.) +
+  aes(x = fix_start, y = cum_fix, color = category) +
+  geom_point() +
+  geom_line()
+```
+
+## Trial 4
+
+Select fixations for trial 1.
+
+```{r}
+this_trial <- df_merge %>%
+  filter(., trial == 4)
+```
+
+```{r}
+this_trial %>%
+  ggplot(.) +
+  aes(x=fixationindex, y=gazeeventduration) +
+  geom_point()
+```
+
+Let's generate cumulative sums.
+
+```{r}
+this_trial_fixations <- this_trial %>%
+  dplyr::filter(., count == 1) %>%
+  dplyr::group_by(., category, fixationindex) %>%
+  dplyr::summarize(., fix_ms = mean(gazeeventduration),
+                   fix_start = min(recordingtimestamp),
+                   fix_end = max(recordingtimestamp)) %>%
+  dplyr::arrange(., fixationindex)
+
+this_trial_fixations_cum_sum <- this_trial_fixations %>%
+  dplyr::group_by(., category) %>%
+  dplyr::summarize(., fixationindex = fixationindex,
+                   cum_fix = cumsum(fix_ms), 
+                   fix_start = fix_start, 
+                   fix_end = fix_end) %>%
+  dplyr::arrange(., fixationindex, fix_start)
+
+start_cum_sum <- c(0, this_trial_fixations_cum_sum$cum_fix[1:length(this_trial_fixations_cum_sum)-1])
+
+xx <- this_trial_fixations_cum_sum %>%
+  tidyr::pivot_longer(., c(fix_start, fix_end), names_to = "fix_evt", values_to = "ms") %>%
+  dplyr::arrange(., fixationindex, ms)
+
+yy <- this_trial_fixations_cum_sum %>%
+  dplyr::select(., fixationindex, cum_fix) %>%
+  dplyr::mutate(., cum_fix_start = c(0, cum_fix[1:length(cum_fix)-1])) %>%
+  tidyr::pivot_longer(., c(cum_fix_start, cum_fix), names_to = "sum_cat", values_to = "cum_sum_ms") %>%
+  dplyr::arrange(., fixationindex, cum_sum_ms)
+
+zz <- xx
+zz$cum_sum_ms = yy$cum_sum_ms
+```
+
+```{r}
+zz %>%
+  dplyr::arrange(., category, fixationindex) %>%
+  #filter(., category == 'a') %>%
+  ggplot(.) +
+  aes(x = ms, y = cum_sum_ms, color = category) +
+  geom_point() +
+  geom_line()
+```
+
+```{r}
+this_trial_fixations_cum_sum %>%
+  ggplot(.) +
+  aes(x = fix_start, y = cum_fix, color = category) +
+  geom_point() +
+  geom_line()
+```
+
+
+
+## Trial 5
+
+Select fixations for trial 5.
+
+```{r}
+this_trial <- df_merge %>%
+  filter(., trial == 5)
+```
+
+```{r}
+this_trial %>%
+  ggplot(.) +
+  aes(x=fixationindex, y=gazeeventduration) +
+  geom_point()
+```
+
+Let's generate cumulative sums.
+
+```{r}
+this_trial_fixations <- this_trial %>%
+  dplyr::filter(., count == 1) %>%
+  dplyr::group_by(., category, fixationindex) %>%
+  dplyr::summarize(., fix_ms = mean(gazeeventduration),
+                   fix_start = min(recordingtimestamp),
+                   fix_end = max(recordingtimestamp)) %>%
+  dplyr::arrange(., fixationindex)
+
+this_trial_fixations_cum_sum <- this_trial_fixations %>%
+  dplyr::group_by(., category) %>%
+  dplyr::summarize(., fixationindex = fixationindex,
+                   cum_fix = cumsum(fix_ms), 
+                   fix_start = fix_start, 
+                   fix_end = fix_end) %>%
+  dplyr::arrange(., fixationindex, fix_start)
+
+start_cum_sum <- c(0, this_trial_fixations_cum_sum$cum_fix[1:length(this_trial_fixations_cum_sum)-1])
+
+xx <- this_trial_fixations_cum_sum %>%
+  tidyr::pivot_longer(., c(fix_start, fix_end), names_to = "fix_evt", values_to = "ms") %>%
+  dplyr::arrange(., fixationindex, ms)
+
+yy <- this_trial_fixations_cum_sum %>%
+  dplyr::select(., fixationindex, cum_fix) %>%
+  dplyr::mutate(., cum_fix_start = c(0, cum_fix[1:length(cum_fix)-1])) %>%
+  tidyr::pivot_longer(., c(cum_fix_start, cum_fix), names_to = "sum_cat", values_to = "cum_sum_ms") %>%
+  dplyr::arrange(., fixationindex, cum_sum_ms)
+
+zz <- xx
+zz$cum_sum_ms = yy$cum_sum_ms
+```
+
+```{r}
+zz %>%
+  dplyr::arrange(., category, fixationindex) %>%
+  #filter(., category == 'a') %>%
+  ggplot(.) +
+  aes(x = ms, y = cum_sum_ms, color = category) +
+  geom_point() +
+  geom_line()
+```
+
+```{r}
+this_trial_fixations_cum_sum %>%
+  ggplot(.) +
+  aes(x = fix_start, y = cum_fix, color = category) +
+  geom_point() +
+  geom_line()
+```
+
+
+## Trial 6
+
+Select fixations for trial 1.
+
+```{r}
+this_trial <- df_merge %>%
+  filter(., trial == 6)
+```
+
+```{r}
+this_trial %>%
+  ggplot(.) +
+  aes(x=fixationindex, y=gazeeventduration) +
+  geom_point()
+```
+
+Let's generate cumulative sums.
+
+```{r}
+this_trial_fixations <- this_trial %>%
+  dplyr::filter(., count == 1) %>%
+  dplyr::group_by(., category, fixationindex) %>%
+  dplyr::summarize(., fix_ms = mean(gazeeventduration),
+                   fix_start = min(recordingtimestamp),
+                   fix_end = max(recordingtimestamp)) %>%
+  dplyr::arrange(., fixationindex)
+
+this_trial_fixations_cum_sum <- this_trial_fixations %>%
+  dplyr::group_by(., category) %>%
+  dplyr::summarize(., fixationindex = fixationindex,
+                   cum_fix = cumsum(fix_ms), 
+                   fix_start = fix_start, 
+                   fix_end = fix_end) %>%
+  dplyr::arrange(., fixationindex, fix_start)
+
+start_cum_sum <- c(0, this_trial_fixations_cum_sum$cum_fix[1:length(this_trial_fixations_cum_sum)-1])
+
+xx <- this_trial_fixations_cum_sum %>%
+  tidyr::pivot_longer(., c(fix_start, fix_end), names_to = "fix_evt", values_to = "ms") %>%
+  dplyr::arrange(., fixationindex, ms)
+
+yy <- this_trial_fixations_cum_sum %>%
+  dplyr::select(., fixationindex, cum_fix) %>%
+  dplyr::mutate(., cum_fix_start = c(0, cum_fix[1:length(cum_fix)-1])) %>%
+  tidyr::pivot_longer(., c(cum_fix_start, cum_fix), names_to = "sum_cat", values_to = "cum_sum_ms") %>%
+  dplyr::arrange(., fixationindex, cum_sum_ms)
+
+zz <- xx
+zz$cum_sum_ms = yy$cum_sum_ms
+```
+
+```{r}
+zz %>%
+  dplyr::arrange(., category, fixationindex) %>%
+  #filter(., category == 'a') %>%
+  ggplot(.) +
+  aes(x = ms, y = cum_sum_ms, color = category) +
+  geom_point() +
+  geom_line()
+```
+
+```{r}
+this_trial_fixations_cum_sum %>%
+  ggplot(.) +
+  aes(x = fix_start, y = cum_fix, color = category) +
+  geom_point() +
+  geom_line()
+```
+
+
+
+# Trial 7
+
+```{r}
+this_trial <- df_merge %>%
+  filter(., trial == 7)
+
+this_trial_fixations <- this_trial %>%
+  dplyr::filter(., count == 1) %>%
+  dplyr::group_by(., category, fixationindex) %>%
+  dplyr::summarize(., fix_ms = mean(gazeeventduration),
+                   fix_start = min(recordingtimestamp),
+                   fix_end = max(recordingtimestamp)) %>%
+  dplyr::arrange(., fixationindex)
+
+this_trial_fixations_cum_sum <- this_trial_fixations %>%
+  dplyr::group_by(., category) %>%
+  dplyr::summarize(., fixationindex = fixationindex,
+                   cum_fix = cumsum(fix_ms), 
+                   fix_start = fix_start, 
+                   fix_end = fix_end) %>%
+  dplyr::arrange(., fixationindex, fix_start)
+
+start_cum_sum <- c(0, this_trial_fixations_cum_sum$cum_fix[1:length(this_trial_fixations_cum_sum)-1])
+
+xx <- this_trial_fixations_cum_sum %>%
+  tidyr::pivot_longer(., c(fix_start, fix_end), names_to = "fix_evt", values_to = "ms") %>%
+  dplyr::arrange(., fixationindex, ms)
+
+yy <- this_trial_fixations_cum_sum %>%
+  dplyr::select(., fixationindex, cum_fix) %>%
+  dplyr::mutate(., cum_fix_start = c(0, cum_fix[1:length(cum_fix)-1])) %>%
+  tidyr::pivot_longer(., c(cum_fix_start, cum_fix), names_to = "sum_cat", values_to = "cum_sum_ms") %>%
+  dplyr::arrange(., fixationindex, cum_sum_ms)
+
+zz <- xx
+zz$cum_sum_ms = yy$cum_sum_ms
+
+zz %>%
+  dplyr::arrange(., category, fixationindex) %>%
+  ggplot(.) +
+  aes(x = ms, y = cum_sum_ms, color = category) +
+  geom_point() +
+  geom_line()
+```
+
+
+## Trial 8
+
+```{r}
+this_trial <- df_merge %>%
+  filter(., trial == 8)
+
+this_trial_fixations <- this_trial %>%
+  dplyr::filter(., count == 1) %>%
+  dplyr::group_by(., category, fixationindex) %>%
+  dplyr::summarize(., fix_ms = mean(gazeeventduration),
+                   fix_start = min(recordingtimestamp),
+                   fix_end = max(recordingtimestamp)) %>%
+  dplyr::arrange(., fixationindex)
+
+this_trial_fixations_cum_sum <- this_trial_fixations %>%
+  dplyr::group_by(., category) %>%
+  dplyr::summarize(., fixationindex = fixationindex,
+                   cum_fix = cumsum(fix_ms), 
+                   fix_start = fix_start, 
+                   fix_end = fix_end) %>%
+  dplyr::arrange(., fixationindex, fix_start)
+
+start_cum_sum <- c(0, this_trial_fixations_cum_sum$cum_fix[1:length(this_trial_fixations_cum_sum)-1])
+
+xx <- this_trial_fixations_cum_sum %>%
+  tidyr::pivot_longer(., c(fix_start, fix_end), names_to = "fix_evt", values_to = "ms") %>%
+  dplyr::arrange(., fixationindex, ms)
+
+yy <- this_trial_fixations_cum_sum %>%
+  dplyr::select(., fixationindex, cum_fix) %>%
+  dplyr::mutate(., cum_fix_start = c(0, cum_fix[1:length(cum_fix)-1])) %>%
+  tidyr::pivot_longer(., c(cum_fix_start, cum_fix), names_to = "sum_cat", values_to = "cum_sum_ms") %>%
+  dplyr::arrange(., fixationindex, cum_sum_ms)
+
+zz <- xx
+zz$cum_sum_ms = yy$cum_sum_ms
+
+zz %>%
+  dplyr::arrange(., category, fixationindex) %>%
+  ggplot(.) +
+  aes(x = ms, y = cum_sum_ms, color = category) +
+  geom_point() +
+  geom_line()
+```
+

@@ -1,6 +1,6 @@
 ---
-title: "Cumulative looking plots"
-subtitle: "Version 2.0"
+title: "Cumulative Looking Plots"
+subtitle: "Version 6.0"
 author: "Rick Gilmore"
 date: "`r Sys.time()`"
 output: 
@@ -17,7 +17,7 @@ The idea is to take as input a time series of fixations within a trial, categori
 Our thought is that this will help us visualize how the amount of fixation time is accumulating, including rates of accumulation and switches among different categories.
 An extension would involve normalizing the horizontal axis (time), but the total response time and the vertical axis (accumulated time), but the total looking time.
 
-This version of the analysis builds on a version 1.0 (`cumulative-looking-plot-v01.Rmd`).
+This version of the analysis builds on a version 1.0 (`cumulative-looking-plot-v04.Rmd`).
 I benefitted from a discussion with Yiming Qian about how to parse the columns beginning with `AOI`.
 
 # Setup
@@ -34,17 +34,6 @@ The relevant data are in Box.
 
 The parent project folder is `~/Box/R01 Project 2 Data for Yiming&Rick/R01A-C files for transitional probabilities/`, and the files are in `.xlsx` format.
 
-## Relevant packages
-
-We'll use the `readxl` package from the `tidyverse` group of packages.
-
-```{r}
-if (!require(readxl)){
-  install.packages(readxl)
-}
-```
-
-
 # Import data
 
 First we list the fixation files.
@@ -55,130 +44,93 @@ fix_files <- list.files('~/Box/R01 Project 2 Data for Yiming&Rick/R01A-C files f
 fix_files
 ```
 
-I failed to use `read_xls()`, so I manually exported one of the files as a CSV.
+Convert to CSV and import one.
 
 ```{r}
 csv_files <- list.files('~/Box/R01 Project 2 Data for Yiming&Rick/R01A-C files for transitional probabilities', pattern = '\\.csv$', full.names = TRUE)
 csv_files
 ```
 
-Let's see if we can import the CSV.
-
 ```{r}
-a_ds_df <- readr::read_csv(csv_files[2])
-```
-
-Yes, that seems to have worked.
-
-We now list the column names to determine what to keep and what to drop.
-
-```{r}
-names(a_ds_df)
+df <- readr::read_csv(csv_files[2])
 ```
 
 # Data cleaning
 
-## Proposed Steps
-
-1. We need to parse the wide set of AOI names, e.g., the columns beginning with `AOI` as follows:
-
-- The number represents the trial.
-- The letter \{A, B, C X\} represents the category of the target image where `A`: target, `B`: semantically related, `C`: distractor, and `X`: on-screen but in the white space.
-- The spatial layout for the trial, e.g., \{CLOCK, SOC, WIDE, EMO\}.
-- The target word or concept, e.g., SWING, LADDER, SAD, HAPPY, COLD, etc.
-
-There should be a 1 in the column when the fixation in question is in one of these categories. 
-I wonder if we can filter these values somehow to select the column where there is a 1. 
-Then, we can convert the AOI name.
-
-## Testing column filtering
-
-As a test, let's take some early rows and see if we can find the 1 in the long wide list of columns.
-
-```{r}
-dim(a_ds_df)
-```
-
-There are 1105 columns, and the ones beginning with 'AOI' start in column 18.
-
-```{r, eval=FALSE}
-df_subset <- a_ds_df[1:100,18:1105]
-
-df_which_aoi <- df_subset %>%
-  dplyr::select(., where(function(x) {x == 1}))
-```
-
-Ok, let's try a different approach.
-
 Let's parse and reformat the column names.
 
-```{r, eval=FALSE}
-df_new <- a_ds_df %>%
-  purrr::set_names(~ str_to_lower(.) %>%
-                     str_replace_all("AOI|aoi", "") %>%
-                     str_replace_all("\\[", "") %>%
-                     str_replace_all("\\]", "") %>%
-                     str_replace_all("[Hh]it", ""))
-```
-
 ```{r}
-df_new <- a_ds_df %>%
+df_new <- df %>%
   purrr::set_names(~ str_to_lower(.) %>%
                      str_replace_all("AOI|aoi", "") %>%
                      str_replace_all("\\[", ""))
 ```
 
-
-Yay! That works.
-
 Let's then select one participant.
 
 ```{r}
 p_ids <- unique(df_new$participantname)
+p_ids
+```
+
+Let's pick the first one.
+
+```{r}
+df_TR <- df_new[df_new$participantname == "TR",]
 ```
 
 ```{r}
-df_new_1 <- df_new[df_new$participantname == "TR",]
-```
-
-Let's see if we can gather or `pivot_longer`.
-
-```{r, eval=FALSE}
-#df_short <- df_new[1:10000,]
-df_short <- df_new_1
-df_longer <- df_short %>%
-  pivot_longer(
-    cols = `1c-wide-swing`:`32x-wide-all_1`,
-    names_pattern = "([0-9]+)([abcx])\\-([a-z]+)\\-([a-z_1]+)",
-    names_to = c("trial", "category", "layout", "target"),
-    values_to = "count"
-  ) %>%
-  filter(., count > 0)
-```
-
-```{r}
-#df_short <- df_new[1:10000,]
-df_short <- df_new_1
-df_longer <- df_short %>%
+df_TR_longer <- df_TR %>%
   pivot_longer(
     cols = `1c-wide-swing]hit`:`32x-wide-all]hit_1`,
     names_pattern = "([0-9]+)([abcx])\\-([a-z]+)\\-([a-z\\-123]+)]hit_?(1?)",
-    names_to = c("trial", "category", "layout", "target", "fix_hr"),
+    names_to = c("trial", "category", "layout", "aoi", "fix_here"),
     values_to = "count"
-  ) %>%
-  filter(., count > 0)
+  )
 ```
 
-Hoo-ha, that seems to have worked.
-
-Let's trim some of the other fields I don't need.
+Filter based on `medianame`.
+The 'target' samples have 'White' or 'Color' in `medianame`.
+But we have to extract the target from the `medianame` used for the prompt.
 
 ```{r}
-df_longer <- df_longer %>%
+trial_prompts <- df_TR_longer %>%
+  dplyr::select(., trial, medianame) %>%
+  dplyr::filter(., !is.na(medianame),
+                "\\.wmv" %in% medianame) %>%
+  dplyr::group_by(trial) %>%
+  dplyr::summarise(target_stim = str_extract(medianame,
+                                             "_([a-z]+)\\.wmv"))
+```
+```{r}
+trial_prompts <- df_TR_longer %>%
+  dplyr::select(., trial, medianame) %>%
+  dplyr::filter(., !is.na(medianame),
+                str_detect(medianame, '\\.wmv')) 
+
+media_nm_pattern <- "([A-Z]{1}[a-z]+)_([a-z]+)"
+spkr_target <- str_match(trial_prompts$medianame, media_nm_pattern)
+
+trial_prompts$spkr <- spkr_target[,2]
+trial_prompts$target <- spkr_target[,3]
+```
+
+
+```{r}
+df_TR_longer_disp_only <- df_TR_longer %>%
+  dplyr::filter(., str_detect(medianame, 'White|Color'))
+
+dim(df_TR_longer_disp_only)
+```
+
+Still seems long, but let's trim some columns.
+
+```{r}
+
+df_TR_longer_disp_only <- df_TR_longer_disp_only %>%
   dplyr::select(., -studioprojectname, 
                 -studiotestname,
-                -`participant typevalue`,
-                -medianame,
+                -`participant type]value`,
                 -mouseeventindex,
                 -mouseevent,
                 -`mouseeventx (adcspx)`,
@@ -189,21 +141,32 @@ df_longer <- df_longer %>%
                 -`fixationpointx (mcspx)`,
                 -`fixationpointy (mcspx)`) %>%
   dplyr::arrange(., trial, fixationindex, recordingtimestamp)
-
-write_csv(df_longer, '~/Desktop/longer.csv')
 ```
 
-Note that the `category` variable for the AOI includes `x` for trials where the participant is also looking at one of the other categories.
+Omit rows with is.na(count) and fixations in `x`.
 
 ```{r}
-n_aois_per <- df_longer %>%
+df_TR_longer_disp_only <- df_TR_longer_disp_only %>%
+  dplyr::filter(., (!is.na(count))) %>%
+  dplyr::filter(., category %in% c('a', 'b', 'c')) %>%
+  # convert trial to integer
+  dplyr::mutate(., trial = as.numeric(trial)) %>%
+  dplyr::arrange(., trial, recordingtimestamp)
+
+dim(df_TR_longer_disp_only)
+```
+
+Ok, that looks better.
+
+```{r}
+n_aois_per <- df_TR_longer_disp_only %>%
   dplyr::arrange(., trial, fixationindex, recordingtimestamp) %>%
   dplyr::group_by(., recordingtimestamp) %>%
   dplyr::summarize(., n_aois = cumsum(count))
 
 these_aois <- (n_aois_per$n_aois == 1)
 
-df_longer <- df_longer %>%
+df_longer <- df_TR_longer_disp_only %>%
   dplyr::arrange(., trial, fixationindex, recordingtimestamp) 
 
 df_merge <- df_longer %>%
@@ -229,7 +192,7 @@ Select fixations for trial 1.
 
 ```{r}
 this_trial <- df_merge %>%
-  filter(., trial == 1)
+  filter(., trial == 2)
 ```
 
 ```{r}
@@ -243,29 +206,60 @@ Let's generate cumulative sums.
 
 ```{r}
 this_trial_fixations <- this_trial %>%
+  dplyr::filter(., count == 1) %>%
   dplyr::group_by(., category, fixationindex) %>%
   dplyr::summarize(., fix_ms = mean(gazeeventduration),
-                   fix_start = min(recordingtimestamp)) %>%
+                   fix_start = min(recordingtimestamp),
+                   fix_end = max(recordingtimestamp)) %>%
   dplyr::arrange(., fixationindex)
 
 this_trial_fixations_cum_sum <- this_trial_fixations %>%
   dplyr::group_by(., category) %>%
-  dplyr::summarize(., cum_fix = cumsum(fix_ms), fix_start = fix_start) %>%
-  dplyr::arrange(., category, fix_start)
+  dplyr::summarize(., fixationindex = fixationindex,
+                   cum_fix = cumsum(fix_ms), 
+                   fix_start = fix_start, 
+                   fix_end = fix_end) %>%
+  dplyr::arrange(., fixationindex, fix_start)
+
+start_cum_sum <- c(0, this_trial_fixations_cum_sum$cum_fix[1:length(this_trial_fixations_cum_sum)-1])
+
+xx <- this_trial_fixations_cum_sum %>%
+  tidyr::pivot_longer(., c(fix_start, fix_end), names_to = "fix_evt", values_to = "ms") %>%
+  dplyr::arrange(., fixationindex, ms)
+
+yy <- this_trial_fixations_cum_sum %>%
+  dplyr::select(., fixationindex, cum_fix) %>%
+  dplyr::mutate(., cum_fix_start = c(0, cum_fix[1:length(cum_fix)-1])) %>%
+  tidyr::pivot_longer(., c(cum_fix_start, cum_fix), names_to = "sum_cat", values_to = "cum_sum_ms") %>%
+  dplyr::arrange(., fixationindex, cum_sum_ms)
+
+zz <- xx
+zz$cum_sum_ms = yy$cum_sum_ms
+```
+
+```{r}
+zz %>%
+  dplyr::arrange(., category, fixationindex) %>%
+  filter(., category == 'a') %>%
+  ggplot(.) +
+  aes(x = ms, y = cum_sum_ms, color = category) +
+  geom_point() +
+  geom_line()
 ```
 
 ```{r}
 this_trial_fixations_cum_sum %>%
   ggplot(.) +
   aes(x = fix_start, y = cum_fix, color = category) +
-  geom_point()
+  geom_point() +
+  geom_line()
 ```
  
- ## Same participant, multiple trials
+## Same participant, multiple trials
  
 ```{r}
-df_merge <- df_merge %>%
-  dplyr::mutate(., trial = as.numeric(trial))
+# df_merge <- df_merge %>%
+#   dplyr::mutate(., trial = as.numeric(trial))
 
 these_fixations <- df_merge %>%
   dplyr::group_by(., trial, layout, target, fixationindex, category) %>%
@@ -284,32 +278,23 @@ these_fixations_cum_sum <- these_fixations %>%
 ```
  
 ```{r}
-these_fixations_cum_sum %>%
-  ggplot(.) +
-  aes(x = fix_start, y = cum_fix, color = category) +
-  geom_point() +
-  facet_wrap(~ trial)
-```
-
-I do not want to use `facet_wrap()` because it puts the time basis on the same scale.
-
-```{r}
-plot_this_trial <- function(select_trial = 1) {
+plot_this_trial <- function(select_trial = 1, save_it = FALSE) {
   this_trial <- dplyr::filter(these_fixations_cum_sum, trial == select_trial)
-  ggplot(this_trial) +
+  p <- ggplot(this_trial) +
     aes(x = fix_start, y = cum_fix, color = category) +
     geom_point() +
     ggtitle(paste0("Participant TR | Trial ", this_trial$trial, ' | ',
                    this_trial$target, ' | ', this_trial$layout)) +
     geom_line()
+  
+  if (save_it) {
   ggsave(paste0('img/', 'TR-', this_trial$trial, '-', 
                 this_trial$target, '-', this_trial$layout, '.png'),
-         device = 'png')
+         device = 'png')    
+  }
+  p
 }
 
-plot_this_trial(2)
+plot_this_trial(4)
 ```
 
-```{r}
-purrr::map(1:32, plot_this_trial)
-```
